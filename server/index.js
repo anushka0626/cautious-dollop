@@ -1,42 +1,34 @@
 const express = require('express');
 const multer = require('multer');
-const pdf = require('pdf-parse');
 const cors = require('cors');
 const { spawn } = require('child_process'); 
 const path = require('path');
-const crypto = require('crypto'); 
+const fs = require('fs/promises');
+const os = require('os');
 
 const app = express();
 app.use(cors());
 const upload = multer();
 
 app.post('/analyze', upload.single('pdf'), async (req, res) => {
+    let tempDir;
     try {
         if (!req.file) return res.status(400).send("No file uploaded");
 
         console.log("--- Processing File: " + req.file.originalname + " ---");
         const dataBuffer = req.file.buffer;
        
-        const pdfResult = await pdf(dataBuffer);
-        const pdfText = pdfResult.text; 
-
-        console.log("--- DEBUG: EXTRACTED TEXT LENGTH: " + pdfText.length + " ---");
+        tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'veritas-ledger-'));
+        const pdfPath = path.join(tempDir, req.file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_'));
+        await fs.writeFile(pdfPath, dataBuffer);
 
         const pythonProcess = spawn('python', [
-            path.join(__dirname, 'ml_engine', 'analyzer.py')
+            path.join(__dirname, 'ml_engine', 'analyzer.py'),
+            pdfPath
         ]);
 
         let resultData = '';
         let errorData = '';
-
-        // Write text to Python's stdin
-        try {
-            pythonProcess.stdin.write(pdfText);
-            pythonProcess.stdin.end();
-        } catch (stdinErr) {
-            console.error("Stdin Error:", stdinErr);
-            return res.status(500).json({ error: "Failed to send data to analyzer" });
-        }
 
         pythonProcess.stdout.on('data', (data) => {
             resultData += data.toString();
@@ -50,10 +42,7 @@ app.post('/analyze', upload.single('pdf'), async (req, res) => {
         pythonProcess.on('close', (code) => {
             if (code !== 0) {
                 console.error("Python Process Exited with code:", code);
-                // Return error if no result data was captured
-                if (!resultData) {
-                     return res.status(500).json({ error: "Analysis failed", details: errorData });
-                }
+                return res.status(500).json({ error: "Analysis failed", details: errorData });
             }
 
             try {
@@ -68,19 +57,14 @@ app.post('/analyze', upload.single('pdf'), async (req, res) => {
                 const cleanResult = resultData.substring(jsonStart, jsonEnd + 1);
                 const analysisResult = JSON.parse(cleanResult);
                 
-                // Calculate Hash
-                const hashSum = crypto.createHash('sha256');
-                hashSum.update(req.file.buffer); 
-                const docHash = "0x" + hashSum.digest('hex');
-
                 res.json({
-                    docHash: docHash,           
+                    docHash: analysisResult.docHash,
                     score: analysisResult.score,
                     type: analysisResult.type,   
                     risks: analysisResult.risks,
                     entities: analysisResult.entities,
                     summary: analysisResult.summary, 
-                     missing_clauses: analysisResult.missing_clauses
+                    missing_clauses: analysisResult.missing_clauses
                 });
 
             } catch (e) {
@@ -88,6 +72,12 @@ app.post('/analyze', upload.single('pdf'), async (req, res) => {
                 console.error("Raw Output:", resultData);
                 res.status(500).send("Error parsing analysis results");
             }
+        });
+
+        pythonProcess.on('close', () => {
+            fs.rm(tempDir, { recursive: true, force: true }).catch((cleanupError) => {
+                console.error("Temporary file cleanup failed:", cleanupError);
+            });
         });
 
     } catch (error) {

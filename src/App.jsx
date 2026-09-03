@@ -1,488 +1,87 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { ethers } from 'ethers';
+import { Activity, ArrowRight, Check, Clipboard, FileCheck2, Fingerprint, LockKeyhole, ShieldCheck, Upload, Wifi } from 'lucide-react';
 import './App.css';
 
-// --- SVG Icons ---
-const UploadIcon = () => (
-  <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="upload-icon"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
-);
-
-const ChipIcon = () => (
-    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{marginRight:'5px'}}><rect x="4" y="4" width="16" height="16" rx="2" ry="2"></rect><rect x="9" y="9" width="6" height="6"></rect><line x1="9" y1="1" x2="9" y2="4"></line><line x1="15" y1="1" x2="15" y2="4"></line><line x1="9" y1="20" x2="9" y2="23"></line><line x1="15" y1="20" x2="15" y2="23"></line><line x1="20" y1="9" x2="23" y2="9"></line><line x1="20" y1="14" x2="23" y2="14"></line><line x1="1" y1="9" x2="4" y2="9"></line><line x1="1" y1="14" x2="4" y2="14"></line></svg>
-);
-
-// --- BLOCKCHAIN CONSTANTS ---
-// Ensure this matches your DEPLOYED contract address
-const CONTRACT_ADDRESS = "0x62f6bBB2e20707dce3bA7078A7d1ce3126Fb7Fb7"; 
-
-// Updated ABI matching your new Smart Contract
+const CONTRACT_ADDRESS = '0xbc215903484c0335d6848B6a0C1CD3DD112a48Ef';
+const SEPOLIA_CHAIN_ID_HEX = '0xaa36a7';
 const CONTRACT_ABI = [
-	{
-		"inputs": [
-			{ "internalType": "bytes32", "name": "_documentId", "type": "bytes32" },
-			{ "internalType": "bytes32", "name": "_documentHash", "type": "bytes32" }
-		],
-		"name": "createDocument",
-		"outputs": [],
-		"stateMutability": "nonpayable",
-		"type": "function"
-	},
-	{
-		"inputs": [
-			{ "internalType": "bytes32", "name": "_documentId", "type": "bytes32" },
-			{ "internalType": "bytes32", "name": "_newDocumentHash", "type": "bytes32" }
-		],
-		"name": "updateDocument",
-		"outputs": [],
-		"stateMutability": "nonpayable",
-		"type": "function"
-	},
-	{
-		"inputs": [
-			{ "internalType": "bytes32", "name": "_documentId", "type": "bytes32" }
-		],
-		"name": "getLatestHash",
-		"outputs": [
-			{ "internalType": "bytes32", "name": "", "type": "bytes32" }
-		],
-		"stateMutability": "view",
-		"type": "function"
-	},
-    // Events
-	{
-		"anonymous": false,
-		"inputs": [
-			{ "indexed": true, "internalType": "bytes32", "name": "documentId", "type": "bytes32" },
-			{ "indexed": false, "internalType": "bytes32", "name": "documentHash", "type": "bytes32" },
-			{ "indexed": true, "internalType": "address", "name": "creator", "type": "address" }
-		],
-		"name": "DocumentCreated",
-		"type": "event"
-	},
-	{
-		"anonymous": false,
-		"inputs": [
-			{ "indexed": true, "internalType": "bytes32", "name": "documentId", "type": "bytes32" },
-			{ "indexed": false, "internalType": "bytes32", "name": "newHash", "type": "bytes32" },
-			{ "indexed": false, "internalType": "bytes32", "name": "previousHash", "type": "bytes32" }
-		],
-		"name": "DocumentUpdated",
-		"type": "event"
-	}
+  { inputs: [{ name: '_docHash', type: 'string' }, { name: '_summary', type: 'string' }], name: 'registerDocument', outputs: [], stateMutability: 'nonpayable', type: 'function' },
+  { inputs: [{ name: '_docHash', type: 'string' }], name: 'verifyDocument', outputs: [{ name: 'summary', type: 'string' }, { name: 'timestamp', type: 'uint256' }, { name: 'registeredBy', type: 'address' }], stateMutability: 'view', type: 'function' },
+];
+
+const custodyStops = [
+  ['Police Station', 'Evidence received and sealed', '14 Aug 2026 · 21:45 hrs'],
+  ['FSL Laboratory', 'Ballistics examination logged', '16 Aug 2026 · 10:20 hrs'],
+  ['Magistrate Court', 'Judicial record available for review', 'Pending court submission'],
 ];
 
 function App() {
-  const [activeTab, setActiveTab] = useState('new');
-  const [error, setError] = useState('');
-  const [isProcessing, setIsProcessing] = useState(false);
-  
+  const [activeTab, setActiveTab] = useState('ingest');
   const [file, setFile] = useState(null);
-  const [fileName, setFileName] = useState('');
-  const [docHash, setDocHash] = useState('');
-  const [clauses, setClauses] = useState([]);
-  const [docType, setDocType] = useState('');
-  const [score, setScore] = useState(0);
-  const [entities, setEntities] = useState([]);
-  
-  const [originalHash, setOriginalHash] = useState('');
+  const [analysis, setAnalysis] = useState(null);
   const [verifyId, setVerifyId] = useState('');
   const [verifyResult, setVerifyResult] = useState(null);
-
-  const [isNotarizing, setIsNotarizing] = useState(false);
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
   const [txHash, setTxHash] = useState('');
-  const [summary, setSummary] = useState('');
-  const [missingClauses, setMissingClauses] = useState([]);
 
-  const resetState = () => {
-    setFile(null);
-    setFileName('');
-    setDocHash('');
-    setClauses([]);
-    setDocType('');
-    setScore(0);
-    setEntities([]);
-    setSummary('');
-    setMissingClauses([]);
-    
-    setError('');
-    setIsProcessing(false);
-    setIsNotarizing(false);
-    setTxHash('');
-    setVerifyResult(null);
-  };
-
-  const handleTabChange = (tab) => {
-    if (isProcessing || isNotarizing) return; 
-    setActiveTab(tab);
-    resetState();
-    setOriginalHash('');
-    setVerifyId('');
-  };
-
-  const handleFileChange = (selectedFile) => {
-    if (selectedFile) {
-        if (selectedFile.type !== 'application/pdf') {
-            setError('Only PDF files are supported.');
-            return;
-        }
-        setError('');
-        setFile(selectedFile);
-        setFileName(selectedFile.name);
-        processDocument(selectedFile);
-    }
-  };
+  const reset = () => { setFile(null); setAnalysis(null); setError(''); setTxHash(''); setVerifyResult(null); };
 
   const getContract = async () => {
-      if (!window.ethereum) throw new Error("MetaMask is not installed.");
-      const provider = new ethers.BrowserProvider(window.ethereum);
-      await provider.send("eth_requestAccounts", []);
-      const signer = await provider.getSigner();
-      return new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
-  };
-
-  const processDocument = async (doc) => {
-    setIsProcessing(true);
-    setError('');
-    const formData = new FormData();
-    formData.append('pdf', doc);
-
+    if (!window.ethereum) throw new Error('MetaMask is not installed.');
     try {
-       const response = await fetch('http://localhost:3001/analyze', { method: 'POST', body: formData });
-       
-       if (!response.ok) {
-           const errText = await response.text();
-           throw new Error(errText || 'Server analysis failed');
-       }
-       
-       const data = await response.json();
-       console.log("🔴 BACKEND DATA RECEIVED:", data);
-       if (data.error) throw new Error(data.error);
-
-       setDocHash(data.docHash);
-       setClauses(data.risks || []);
-       setDocType(data.type);
-       setScore(data.score);
-       setEntities(data.entities || []);
-       // NEW: Set summary and missing clauses
-       setSummary(data.summary || "No summary available.");
-       setMissingClauses(data.missing_clauses || []);
-
-    } catch (err) {
-        console.error("Analysis Error:", err);
-        setError(`Analysis failed: ${err.message}. Is the server running on port 3001?`);
-    } finally {
-        setIsProcessing(false);
+      await window.ethereum.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: SEPOLIA_CHAIN_ID_HEX }] });
+    } catch (switchError) {
+      if (switchError.code !== 4902) throw switchError;
+      await window.ethereum.request({ method: 'wallet_addEthereumChain', params: [{ chainId: SEPOLIA_CHAIN_ID_HEX, chainName: 'Sepolia', nativeCurrency: { name: 'Sepolia ETH', symbol: 'ETH', decimals: 18 }, rpcUrls: ['https://rpc.sepolia.org'], blockExplorerUrls: ['https://sepolia.etherscan.io'] }] });
     }
+    const provider = new ethers.BrowserProvider(window.ethereum);
+    await provider.send('eth_requestAccounts', []);
+    return new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, await provider.getSigner());
   };
 
-
-  // --- ACTION: Create New Document ---
-  const handleCreateDocument = async () => {
-      if (!docHash) return;
-      setIsNotarizing(true);
-      setError('');
-      try {
-          const contract = await getContract();
-          const tx = await contract.createDocument(docHash, docHash);
-          await tx.wait();
-          setTxHash(tx.hash);
-      } catch (err) {
-          console.error("Create Error:", err);
-          if (err.reason && err.reason.includes("Document already exists")) {
-              setError("❌ This document ID is already registered. Please use 'Update Version' instead.");
-          } else {
-              setError(err.reason || err.message || "Transaction failed");
-          }
-      } finally {
-          setIsNotarizing(false);
-      }
+  const processDocument = async (selectedFile) => {
+    if (!selectedFile || selectedFile.type !== 'application/pdf') { setError('Only PDF files are supported.'); return; }
+    setFile(selectedFile); setAnalysis(null); setError(''); setBusy(true);
+    try {
+      const formData = new FormData(); formData.append('pdf', selectedFile);
+      const response = await fetch('http://localhost:3001/analyze', { method: 'POST', body: formData });
+      const data = await response.json();
+      if (!response.ok || data.error) throw new Error(data.error || 'Server analysis failed');
+      setAnalysis(data);
+    } catch (requestError) { setError(`Analysis failed: ${requestError.message}. Is the server running on port 3001?`); }
+    finally { setBusy(false); }
   };
 
-  // --- ACTION: Update Document ---
-  const handleUpdateDocument = async () => {
-      if (!docHash || !originalHash) {
-          setError("Please provide the original document hash and upload the new version.");
-          return;
-      }
-
-      if (!/^0x[a-fA-F0-9]{64}$/.test(originalHash)) {
-          setError("❌ Invalid ID Format. A valid Document ID must be a 64-character hex string starting with '0x'.");
-          return;
-      }
-
-      setIsNotarizing(true);
-      setError('');
-      try {
-          const contract = await getContract();
-          const tx = await contract.updateDocument(originalHash, docHash);
-          await tx.wait();
-          setTxHash(tx.hash);
-      } catch (err) {
-          console.error("Update Error:", err);
-          
-          const errMsg = (err.reason || err.message || "").toLowerCase();
-
-          if (errMsg.includes("document not found")) {
-              setError("❌ Original Document ID not found on blockchain. Are you using the Transaction Hash by mistake? Please use the Document ID.");
-          } else if (errMsg.includes("hash is identical")) {
-              setError("❌ This version is identical to the previous one. No update needed.");
-          } else {
-              setError("Update failed. Check console for details.");
-          }
-      } finally {
-          setIsNotarizing(false);
-      }
+  const registerDocument = async () => {
+    if (!analysis) return;
+    setBusy(true); setError('');
+    try { const tx = await (await getContract()).registerDocument(analysis.docHash, analysis.summary || 'No summary available.'); await tx.wait(); setTxHash(tx.hash); }
+    catch (transactionError) { setError(transactionError.reason || transactionError.message || 'Transaction failed.'); }
+    finally { setBusy(false); }
   };
 
-  // --- ACTION: Verify Document ---
-  const handleVerify = async () => {
-      if (!verifyId) {
-        setError("Please enter a document ID.");
-        return;
-      }
-
-      setIsProcessing(true);
-      setError('');
-      setVerifyResult(null);
-      
-      try {
-          const contract = await getContract();
-          
-          if (!/^0x[a-fA-F0-9]{64}$/.test(verifyId)) {
-             throw new Error("Invalid ID format. Must be a 64-char hex string (0x...).");
-          }
-
-          const latest = await contract.getLatestHash(verifyId);
-          
-          setVerifyResult({
-              inputId: verifyId,
-              latestHash: latest,
-              match: verifyId.toLowerCase() === latest.toLowerCase()
-          });
-
-      } catch (err) {
-          console.error("Verify Error:", err);
-          const errMsg = (err.reason || err.message || "").toLowerCase();
-
-          if (errMsg.includes("document not found")) {
-              setError("❌ Document ID not found on the blockchain.");
-          } else {
-              setError("Verification failed. Please check the ID and your network.");
-          }
-      } finally {
-          setIsProcessing(false);
-      }
+  const verifyDocument = async () => {
+    if (!verifyId.trim()) { setError('Enter a document SHA-256 fingerprint.'); return; }
+    setBusy(true); setError(''); setVerifyResult(null);
+    try { const [summary, timestamp, registeredBy] = await (await getContract()).verifyDocument(verifyId.trim()); setVerifyResult({ summary, timestamp: Number(timestamp), registeredBy }); }
+    catch (verificationError) { setError(verificationError.reason || 'No matching document was found on Sepolia.'); }
+    finally { setBusy(false); }
   };
 
-  const copyToClipboard = (text) => {
-      navigator.clipboard.writeText(text);
-      alert("Copied to clipboard!");
-  };
+  const copyHash = (hash) => navigator.clipboard.writeText(hash);
+  const score = analysis?.score ?? 0;
 
-  const AnalysisReport = () => (
-    <div className="analysis-container fade-in">
-        <div className="analysis-header">
-            <div>
-                <h2>Analysis Complete</h2>
-                <div style={{display:'flex', gap:'10px', alignItems:'center'}}>
-                    <span className="doc-badge">{docType || "Unknown"}</span>
-                    <span style={{fontSize:'0.8rem', color:'#00e676', display:'flex', alignItems:'center', border:'1px solid #00e676', padding:'2px 8px', borderRadius:'12px'}}>
-                        <ChipIcon /> Hybrid AI Active
-                    </span>
-                </div>
-            </div>
-            <div className="score-container">
-                <div className="score-value" style={{ color: score > 70 ? '#00e676' : score > 40 ? '#ffeb3b' : '#cf6679' }}>
-                    {score}/100
-                </div>
-                <span className="score-label">Safety Score</span>
-            </div>
-        </div>
-
-        <div className="analysis-result">
-            <div className="summary-section" style={{gridColumn: '1 / -1', background: 'rgba(255,255,255,0.03)', padding: '1.5rem', borderRadius: '12px', marginBottom: '1rem'}}>
-                <h4 style={{marginTop: 0, color: '#bb86fc'}}>📄 Document Summary</h4>
-                <p style={{color: '#ddd', lineHeight: '1.6', fontSize: '0.95rem'}}>{summary}</p>
-            </div>
-
-            <div className="hash-section">
-                <h4>Calculated SHA-256 Hash</h4>
-                <div className="hash-display">{docHash}</div>
-                <small className="hash-note">This is the unique digital fingerprint of your file.</small>
-                
-                {/* NEW: Missing Clauses Section */}
-                {missingClauses.length > 0 && (
-                    <div style={{marginTop: '2rem'}}>
-                        <h4 style={{color: '#ffeb3b'}}>⚠️ Missing Key Clauses</h4>
-                        <ul style={{paddingLeft: '20px', color: '#ccc'}}>
-                            {missingClauses.map((clause, i) => (
-                                <li key={i} style={{marginBottom: '5px'}}>{clause} (Recommended)</li>
-                            ))}
-                        </ul>
-                    </div>
-                )}
-            </div>
-
-            <div className="clauses-section">
-                <h4>Risk Scan</h4>
-                <ul className="risk-list">
-                    {clauses.map((c, i) => (
-                        <li key={i} className={`risk-item ${c.status}`}>
-                           <div className="risk-title">{c.status === 'detected' ? '✅' : '⚠️'} {c.name}</div>
-                           <div className="risk-desc">{c.explanation}</div>
-                        </li>
-                    ))}
-                    {clauses.length === 0 && <li className="risk-item detected">No obvious risks detected.</li>}
-                </ul>
-            </div>
-        </div>
-        
-        <div className="notarize-action">
-            {activeTab === 'new' ? (
-                <button className="btn btn-primary btn-large" onClick={handleCreateDocument} disabled={isNotarizing}>
-                    {isNotarizing ? 'Notarizing...' : 'Create Record on Blockchain'}
-                </button>
-            ) : (
-                <button className="btn btn-primary btn-large" onClick={handleUpdateDocument} disabled={isNotarizing}>
-                    {isNotarizing ? 'Updating...' : 'Update Version on Blockchain'}
-                </button>
-            )}
-            {error && <p className="error-message">{error}</p>}
-        </div>
-    </div>
-  );
-
-  return (
-    <div className="container">
-      <header className="header">
-        <div className="logo">
-           <h1>Veritas Ledger</h1>
-        </div>
-        
-        <div className="nav-tabs">
-            <button className={`nav-tab ${activeTab === 'new' ? 'active' : ''}`} onClick={() => handleTabChange('new')}>New Document</button>
-            <button className={`nav-tab ${activeTab === 'update' ? 'active' : ''}`} onClick={() => handleTabChange('update')}>Update Version</button>
-            <button className={`nav-tab ${activeTab === 'verify' ? 'active' : ''}`} onClick={() => handleTabChange('verify')}>Verify Hash</button>
-        </div>
-        <div className="actions"></div>
-      </header>
-
-      <main className="main-content">
-        
-        {/* --- VIEW: NEW DOCUMENT --- */}
-        {activeTab === 'new' && !txHash && (
-            <>
-                {!docHash ? (
-                    <div className="dropzone-wrapper fade-in">
-                        <h2 className="section-title">Upload New Contract</h2>
-                        <div className={`dropzone ${isProcessing ? 'processing' : ''}`}>
-                            <input type="file" id="file-upload" accept=".pdf" onChange={(e) => handleFileChange(e.target.files[0])} />
-                            {isProcessing ? <div className="spinner"></div> : (
-                                <label htmlFor="file-upload" className="dropzone-label">
-                                    <UploadIcon />
-                                    <p>Click to upload PDF</p>
-                                </label>
-                            )}
-                        </div>
-                    </div>
-                ) : (
-                    <AnalysisReport />
-                )}
-            </>
-        )}
-
-        {activeTab === 'update' && !txHash && (
-            <div className="update-container fade-in">
-                <h2 className="section-title">Update Existing Document</h2>
-                <div className="input-group">
-                    <label>Original Document ID (First Version Hash)</label>
-                    <input 
-                        type="text" 
-                        placeholder="Paste the Document ID of the FIRST version here (0x...)" 
-                        value={originalHash}
-                        onChange={(e) => setOriginalHash(e.target.value)}
-                        className="text-input"
-                    />
-                </div>
-                
-                {!docHash ? (
-                    <div className="input-group">
-                         <label>Upload New Version (PDF)</label>
-                         <div className={`dropzone small ${isProcessing ? 'processing' : ''}`}>
-                            <input type="file" id="file-upload-update" accept=".pdf" onChange={(e) => handleFileChange(e.target.files[0])} />
-                             {isProcessing ? <div className="spinner-small"></div> : (
-                                <label htmlFor="file-upload-update" className="btn btn-secondary">Select File</label>
-                            )}
-                         </div>
-                    </div>
-                ) : (
-                    <AnalysisReport />
-                )}
-            </div>
-        )}
-
-        {activeTab === 'verify' && (
-            <div className="verify-container fade-in">
-                <h2 className="section-title">Verify Document Authenticity</h2>
-                <p className="section-desc">Enter the <strong>Original Document ID</strong> (the hash of the very first version uploaded) to check for updates.</p>
-                <div className="search-box">
-                    <input 
-                        type="text" 
-                        placeholder="Enter Document ID (0x...)" 
-                        value={verifyId} 
-                        onChange={(e) => setVerifyId(e.target.value)} 
-                        className="text-input"
-                    />
-                    <button className="btn btn-primary" onClick={handleVerify} disabled={isProcessing}>
-                        {isProcessing ? 'Checking...' : 'Verify'}
-                    </button>
-                </div>
-                
-                {error && <p className="error-message">{error}</p>}
-                {verifyResult && (
-                    <div className="verification-result fade-in">
-                        <div className="result-card" style={{
-                            borderColor: verifyResult.match ? '#00e676' : '#ffeb3b',
-                            background: verifyResult.match ? 'rgba(0, 230, 118, 0.1)' : 'rgba(255, 235, 59, 0.1)'
-                        }}>
-                            <div className="result-icon">{verifyResult.match ? '✅' : '⚠️'}</div>
-                            <h3>{verifyResult.match ? 'Valid: This is the Latest Version' : 'Warning: Newer Version Exists'}</h3>
-                            <div className="result-details">
-                                <p><strong>Input ID:</strong> <span className="mono">{verifyResult.inputId}</span></p>
-                                <p><strong>Latest Hash On-Chain:</strong> <span className="mono">{verifyResult.latestHash}</span></p>
-                            </div>
-                        </div>
-                    </div>
-                )}
-            </div>
-        )}
-
-        {txHash && (
-          <div className="confirmation-container fade-in">
-            <h2>Success!</h2>
-            <p>Transaction recorded on Sepolia.</p>
-            <div className="receipt-box">
-                <div className="receipt-item">
-                    <p className="receipt-label">TRANSACTION RECEIPT (Proof of Action):</p>
-                    <div className="hash-display small">{txHash}</div>
-                </div>
-                
-                {activeTab === 'new' && (
-                    <div className="id-box">
-                        <p className="id-label">✨ DOCUMENT ID (SAVE THIS FOR UPDATES):</p>
-                        <div className="hash-display highlight">{docHash}</div>
-                        <button className="copy-btn" onClick={() => copyToClipboard(docHash)}>Copy ID</button>
-                    </div>
-                )}
-            </div>
-            <a href={`https://sepolia.etherscan.io/tx/${txHash}`} target="_blank" rel="noreferrer" className="tx-link">View on Etherscan</a>
-            <button className="btn btn-secondary start-over-btn" onClick={resetState}>Start Over</button>
-          </div>
-        )}
-
-      </main>
-    </div>
-  );
+  return <div className="app-shell">
+    <header className="institutional-header"><div className="brand-lockup"><div className="brand-mark"><Fingerprint size={24} /></div><div><p className="eyebrow">Evidence intelligence platform</p><h1>VERITAS LEDGER</h1><p className="system-name">// Digital Evidence &amp; Custody Chain Management System</p></div></div><div className="status-row"><span><Wifi size={14} /> Network: Sepolia Testnet <b>Active</b></span><span><ShieldCheck size={14} /> BNSS 2023 Engine <b>Online</b></span><span><LockKeyhole size={14} /> Client Encryption <b>Active</b></span></div></header>
+    <nav className="workflow-tabs" aria-label="Evidence workflow"><button className={activeTab === 'ingest' ? 'active' : ''} onClick={() => { setActiveTab('ingest'); setError(''); }}><Upload size={16} /> Evidence Ingestion &amp; Ledger Anchoring</button><button className={activeTab === 'timeline' ? 'active' : ''} onClick={() => setActiveTab('timeline')}><Activity size={16} /> Chain of Custody Timeline</button><button className={activeTab === 'verify' ? 'active' : ''} onClick={() => { setActiveTab('verify'); setError(''); }}><FileCheck2 size={16} /> Judicial Integrity &amp; Tamper Check</button></nav>
+    <main>
+      {activeTab === 'ingest' && <section className="workspace-grid fade-in"><div className="primary-column"><div className="section-heading"><div><p className="eyebrow">01 / ingest</p><h2>Anchor evidence to the ledger</h2><p>Analyse, redact, and register a source PDF without exposing sensitive details on-chain.</p></div><span className="live-tag"><span /> LIVE PIPELINE</span></div>{!analysis && <label className={`dropzone ${busy ? 'processing' : ''}`}><input type="file" accept="application/pdf,.pdf" onChange={(event) => processDocument(event.target.files[0])} />{busy ? <div className="spinner" /> : <><Upload size={38} /><strong>{file ? file.name : 'Drop a legal PDF here'}</strong><small>FIR, forensic report, or evidentiary record · PDF only</small></>}</label>}{analysis && <div className="report-panel"><div className="report-top"><div><p className="eyebrow">ANALYSIS REPORT</p><h2>{analysis.type}</h2><span className="document-badge">Document type verified</span></div><div className="gauge compact" style={{ '--score': `${score * 3.6}deg` }}><strong>{score}%</strong><small>health</small></div></div><div className="hash-box"><div><small>SHA-256 FINGERPRINT</small><code>{analysis.docHash}</code></div><button title="Copy fingerprint" onClick={() => copyHash(analysis.docHash)}><Clipboard size={17} /></button></div><div className="report-columns"><div><h3>Redacted executive summary</h3><p className="summary">{analysis.summary}</p></div><div><h3>Statutory compliance checklist</h3><ul className="checklist">{(analysis.risks || []).map((item, index) => <li key={index} className={item.status}><span>{item.status === 'detected' ? <Check size={14} /> : '!'}</span><div><b>{item.name.replace(/^Missing: /, '')}</b><small>{item.explanation}</small></div></li>)}</ul></div></div><div className="report-actions"><button className="button primary" onClick={registerDocument} disabled={busy}><ShieldCheck size={17} /> {busy ? 'Anchoring...' : 'Anchor on Sepolia'}</button><button className="button ghost" onClick={reset}>Clear record</button></div></div>}{txHash && <div className="certificate"><div className="certificate-seal"><ShieldCheck size={32} /></div><div><p className="eyebrow">CERTIFICATE OF EVIDENTIARY INTEGRITY</p><h2>BNSS Sec. 63 Compliant</h2><p>Cryptographic fingerprint anchored successfully on Sepolia.</p><small>{new Date().toLocaleString()} · TX {txHash.slice(0, 18)}...</small></div></div>}{error && <p className="error-message">{error}</p>}</div><aside className="side-column"><div className="metric-card"><p className="eyebrow">EVIDENTIARY HEALTH</p><div className="gauge" style={{ '--score': `${score * 3.6}deg` }}><strong>{score}%</strong><small>compliance</small></div><p className="metric-note">Based on statutory fields, custody markers, and seal verification.</p></div><div className="signal-card"><p className="eyebrow">PROCESSING SIGNALS</p><div><span className="signal-dot green" /> Local PII redaction</div><div><span className="signal-dot green" /> SHA-256 integrity scan</div><div><span className="signal-dot amber" /> Human review recommended</div></div></aside></section>}
+      {activeTab === 'timeline' && <section className="timeline-view fade-in"><div className="section-heading"><div><p className="eyebrow">02 / custody</p><h2>Chronological chain of custody</h2><p>Mocked operational milestones illustrate the judicial handoff record.</p></div><span className="case-state">CASE FLOW / 104-2026</span></div><div className="timeline">{custodyStops.map(([location, event, date], index) => <div className="timeline-event" key={location}><div className="timeline-marker">{index + 1}</div><div className="timeline-content"><small>{date}</small><h3>{location}</h3><p>{event}</p></div>{index < custodyStops.length - 1 && <ArrowRight className="timeline-arrow" size={20} />}</div>)}</div></section>}
+      {activeTab === 'verify' && <section className="verify-view fade-in"><div className="section-heading"><div><p className="eyebrow">03 / judicial review</p><h2>Verify evidentiary integrity</h2><p>Query the deployed contract using the original SHA-256 fingerprint.</p></div><span className="case-state">READ-ONLY QUERY</span></div><div className="verify-form"><label htmlFor="verify-id">Document fingerprint</label><div><input id="verify-id" value={verifyId} onChange={(event) => setVerifyId(event.target.value)} placeholder="0x... 64-character SHA-256 fingerprint" /><button className="button primary" onClick={verifyDocument} disabled={busy}><FileCheck2 size={17} /> {busy ? 'Checking...' : 'Verify on-chain'}</button></div></div>{error && <p className="error-message">{error}</p>}{verifyResult && <div className="certificate verification-certificate"><div className="certificate-seal"><ShieldCheck size={32} /></div><div><p className="eyebrow">CERTIFICATE OF EVIDENTIARY INTEGRITY</p><h2>BNSS Sec. 63 Compliant</h2><p>Matching record returned from the Sepolia ledger.</p><div className="result-meta"><span>Registered {new Date(verifyResult.timestamp * 1000).toLocaleString()}</span><span>By <code>{verifyResult.registeredBy}</code></span></div><p className="summary">{verifyResult.summary}</p></div></div>}</section>}
+    </main><footer><span>VERITAS LEDGER / INTERNAL JUSTICE SYSTEM</span><span>ENCRYPTED AT REST · AUDIT LOG ENABLED</span></footer>
+  </div>;
 }
 
 export default App;

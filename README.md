@@ -1,5 +1,31 @@
 # Veritas Ledger
 
-A blockchain based project. MVP here for now. More coming soon
+Veritas Ledger is a digital evidence tool for analysing PDF records and anchoring their SHA-256 fingerprints on the Sepolia testnet.
 
-<img width="1900" height="980" alt="image" src="https://github.com/user-attachments/assets/3cf17561-5aba-4e3f-af15-28c4ff417364" />
+## Setup
+
+Install the frontend and server dependencies:
+
+```bash
+npm install
+cd server
+npm install
+pip install -r requirements.txt
+```
+
+## Run
+
+Start the server in one terminal:
+
+```bash
+cd server
+node index.js
+```
+
+Start the frontend in another terminal:
+
+```bash
+npm run dev
+```
+
+Open `http://localhost:5173` in your browser. Upload a PDF to analyse it, then connect MetaMask to Sepolia to register or verify its fingerprint on-chain.

@@ -11,15 +11,19 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "cors": "^2.8.5",
-    "dotenv": "^17.2.3",
+    "@aws-sdk/client-s3": "^3.1127.0",
+    "cors": "^2.8.6",
+    "ethers": "^6.17.0",
     "express": "^5.1.0",
-    "multer": "^2.0.2",
+    "multer": "^2.3.0",
     "openai": "^6.9.1",
     "pdf-parse": "^1.1.1",
     "pdf-parser": "^1.0.5"
   },
   "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^7.0.0",
+    "dotenv": "^17.4.2",
+    "hardhat": "^3.15.0",
     "nodemon": "^3.1.11"
   }
 }

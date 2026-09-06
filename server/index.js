@@ -1,89 +1,101 @@
-const express = require('express');
-const multer = require('multer');
-const cors = require('cors');
-const { spawn } = require('child_process'); 
-const path = require('path');
-const fs = require('fs/promises');
-const os = require('os');
+const express = require("express");
+const cors = require("cors");
+const multer = require("multer");
+require("dotenv").config();
+
+const { uploadEncryptedFile } = require("./storage");
+const { anchorEvidenceOnChain, registryContract } = require("./relayer");
 
 const app = express();
 app.use(cors());
-const upload = multer();
+app.use(express.json());
 
-app.post('/analyze', upload.single('pdf'), async (req, res) => {
-    let tempDir;
-    try {
-        if (!req.file) return res.status(400).send("No file uploaded");
+const upload = multer({ storage: multer.memoryStorage() });
 
-        console.log("--- Processing File: " + req.file.originalname + " ---");
-        const dataBuffer = req.file.buffer;
-       
-        tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'veritas-ledger-'));
-        const pdfPath = path.join(tempDir, req.file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_'));
-        await fs.writeFile(pdfPath, dataBuffer);
-
-        const pythonProcess = spawn('python', [
-            path.join(__dirname, 'ml_engine', 'analyzer.py'),
-            pdfPath
-        ]);
-
-        let resultData = '';
-        let errorData = '';
-
-        pythonProcess.stdout.on('data', (data) => {
-            resultData += data.toString();
-        });
-
-        pythonProcess.stderr.on('data', (data) => {
-            errorData += data.toString();
-            console.error("Python Stderr:", data.toString()); 
-        });
-
-        pythonProcess.on('close', (code) => {
-            if (code !== 0) {
-                console.error("Python Process Exited with code:", code);
-                return res.status(500).json({ error: "Analysis failed", details: errorData });
-            }
-
-            try {
-                // Find JSON in the output (clean up any potential prints)
-                const jsonStart = resultData.indexOf('{');
-                const jsonEnd = resultData.lastIndexOf('}');
-                
-                if (jsonStart === -1 || jsonEnd === -1) {
-                    throw new Error("No JSON found in Python output");
-                }
-
-                const cleanResult = resultData.substring(jsonStart, jsonEnd + 1);
-                const analysisResult = JSON.parse(cleanResult);
-                
-                res.json({
-                    docHash: analysisResult.docHash,
-                    score: analysisResult.score,
-                    type: analysisResult.type,   
-                    risks: analysisResult.risks,
-                    entities: analysisResult.entities,
-                    summary: analysisResult.summary, 
-                    missing_clauses: analysisResult.missing_clauses
-                });
-
-            } catch (e) {
-                console.error("JSON Parse Error:", e);
-                console.error("Raw Output:", resultData);
-                res.status(500).send("Error parsing analysis results");
-            }
-        });
-
-        pythonProcess.on('close', () => {
-            fs.rm(tempDir, { recursive: true, force: true }).catch((cleanupError) => {
-                console.error("Temporary file cleanup failed:", cleanupError);
-            });
-        });
-
-    } catch (error) {
-        console.error("Server Error:", error);
-        res.status(500).send("Error analyzing document");
+// 1. Upload -> Encrypt -> MinIO -> Sepolia Relayer
+app.post("/api/evidence/upload", upload.single("file"), async (req, res) => {
+  try {
+    const { caseId, docType, parentHash } = req.body;
+    if (!req.file || !caseId) {
+      return res.status(400).json({ error: "File and caseId are mandatory" });
     }
+
+    // Step A: AES-256-GCM Encrypt & Store in MinIO
+    const { rawFileHash, storageURI } = await uploadEncryptedFile(
+      req.file.buffer,
+      req.file.originalname,
+      caseId
+    );
+
+    // Step B: Notarize hash on Sepolia
+    const onChainReceipt = await anchorEvidenceOnChain(
+      rawFileHash,
+      storageURI,
+      docType || "FIR",
+      caseId,
+      parentHash
+    );
+
+    res.json({
+      success: true,
+      caseId,
+      docType: docType || "FIR",
+      evidenceHash: rawFileHash,
+      storageURI,
+      txHash: onChainReceipt.txHash,
+      blockNumber: onChainReceipt.blockNumber,
+    });
+  } catch (err) {
+    console.error("Evidence upload failed:", err);
+    res.status(500).json({ error: err.message || "Failed to process evidence" });
+  }
 });
 
-app.listen(3001, () => console.log('Server running on 3001'));
+// 2. Query Chain-of-Custody Docket by Case ID
+app.get("/api/evidence/docket/:caseId", async (req, res) => {
+  try {
+    const hashes = await registryContract.getCaseDocket(req.params.caseId);
+    const records = await Promise.all(
+      hashes.map(async (h) => {
+        const [, record] = await registryContract.verifyEvidence(h);
+        return {
+          evidenceHash: record.evidenceHash,
+          storageURI: record.storageURI,
+          docType: record.docType,
+          caseId: record.caseId,
+          timestamp: Number(record.timestamp),
+          parentHash: record.parentHash,
+        };
+      })
+    );
+    res.json({ caseId: req.params.caseId, docket: records });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 3. Verify Document Hash Against Sepolia
+app.get("/api/evidence/verify/:hash", async (req, res) => {
+  try {
+    const [exists, record] = await registryContract.verifyEvidence(req.params.hash);
+    if (!exists) {
+      return res.json({ authentic: false, message: "Tamper Detected: Hash not on ledger" });
+    }
+    res.json({
+      authentic: true,
+      record: {
+        evidenceHash: record.evidenceHash,
+        storageURI: record.storageURI,
+        docType: record.docType,
+        caseId: record.caseId,
+        timestamp: Number(record.timestamp),
+        loggedBy: record.loggedBy,
+      },
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => console.log(`Veritas Ledger Server running on http://localhost:${PORT}`));

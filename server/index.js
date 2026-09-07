@@ -97,5 +97,36 @@ app.get("/api/evidence/verify/:hash", async (req, res) => {
   }
 });
 
+const FormData = require("form-data");
+// Use global fetch (Node 18+) or require('node-fetch')
+
+// Add an endpoint to run AI processing prior to on-chain notarization
+app.post("/api/evidence/analyze", upload.single("file"), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: "No file provided" });
+    }
+
+    // Forward raw buffer directly
+    const aiResponse = await fetch("http://127.0.0.1:8000/process-document", {
+      method: "POST",
+      body: req.file.buffer,
+      headers: {
+        "Content-Type": "application/octet-stream",
+      },
+    });
+
+    if (!aiResponse.ok) {
+      const errText = await aiResponse.text();
+      return res.status(aiResponse.status).json({ error: errText });
+    }
+
+    const aiData = await aiResponse.json();
+    res.json(aiData);
+  } catch (err) {
+    res.status(500).json({ error: "AI service offline: " + err.message });
+  }
+});
+
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`Veritas Ledger Server running on http://localhost:${PORT}`));

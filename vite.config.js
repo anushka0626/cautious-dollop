@@ -4,6 +4,16 @@ import { VitePWA } from 'vite-plugin-pwa'
 
 // https://vite.dev/config/
 export default defineConfig({
+  // A service worker registration and its caches belong to one origin, and an origin
+  // includes the port. Letting Vite hunt for a free port (5173, 5174, 5175...) meant
+  // every restart could land on a different origin, leaving stale workers registered on
+  // the old ones and making offline behaviour impossible to reason about. strictPort
+  // fails loudly instead of drifting.
+  // Dev and preview get different ports on purpose: that keeps the dev worker and the
+  // production worker on separate origins, so neither one's caches can be mistaken for
+  // the other's while testing offline behaviour.
+  server: { port: 5180, strictPort: true },
+  preview: { port: 5181, strictPort: true },
   plugins: [
     react(),
     VitePWA({

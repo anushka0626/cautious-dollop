@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { Activity, ArrowRight, Check, Clipboard, FileCheck2, Fingerprint, LockKeyhole, ShieldCheck, Upload, Wifi } from 'lucide-react';
+import { Activity, ArrowRight, Check, Clipboard, FileCheck2, Fingerprint, LockKeyhole, ShieldCheck, Upload, Wifi, WifiOff } from 'lucide-react';
+import { API_BASE } from './config';
+import { useOnlineStatus } from './useOnlineStatus';
 import './App.css';
 
-const API_BASE = 'http://localhost:5000';
 const DOC_TYPES = ['FIR', 'Panchnama', 'SeizureMemo', 'ForensicReport', 'Chargesheet'];
 
 // App.css styles form fields only under .verify-form, so the ingest and docket controls
@@ -44,6 +45,7 @@ function App() {
   const [verifyResult, setVerifyResult] = useState(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const { isOnline } = useOnlineStatus();
 
   const switchTab = (tab) => { setActiveTab(tab); setError(''); };
   const reset = () => { setFile(null); setStagedHash(''); setReceipt(null); setError(''); };
@@ -110,7 +112,7 @@ function App() {
   const score = analysis?.score ?? 0;
 
   return <div className="app-shell">
-    <header className="institutional-header"><div className="brand-lockup"><div className="brand-mark"><Fingerprint size={24} /></div><div><p className="eyebrow">Evidence intelligence platform</p><h1>VERITAS LEDGER</h1><p className="system-name">// Digital Evidence &amp; Custody Chain Management System</p></div></div><div className="status-row"><span><Wifi size={14} /> Relayer: Server-side <b>Active</b></span><span><ShieldCheck size={14} /> BNSS 2023 Engine <b>Online</b></span><span><LockKeyhole size={14} /> Client Hashing <b>Active</b></span></div></header>
+    <header className="institutional-header"><div className="brand-lockup"><div className="brand-mark"><Fingerprint size={24} /></div><div><p className="eyebrow">Evidence intelligence platform</p><h1>VERITAS LEDGER</h1><p className="system-name">// Digital Evidence &amp; Custody Chain Management System</p></div></div><div className="status-row"><span>{isOnline ? <Wifi size={14} /> : <WifiOff size={14} style={{ color: 'var(--amber)' }} />} Evidence server <b style={isOnline ? undefined : { color: 'var(--amber)' }}>{isOnline ? 'Reachable' : 'Offline'}</b></span><span><ShieldCheck size={14} /> BNSS 2023 Engine <b>Online</b></span><span><LockKeyhole size={14} /> Client Hashing <b>Active</b></span></div></header>
     <nav className="workflow-tabs" aria-label="Evidence workflow"><button className={activeTab === 'ingest' ? 'active' : ''} onClick={() => switchTab('ingest')}><Upload size={16} /> Evidence Ingestion &amp; Ledger Anchoring</button><button className={activeTab === 'timeline' ? 'active' : ''} onClick={() => switchTab('timeline')}><Activity size={16} /> Chain of Custody Timeline</button><button className={activeTab === 'verify' ? 'active' : ''} onClick={() => switchTab('verify')}><FileCheck2 size={16} /> Judicial Integrity &amp; Tamper Check</button></nav>
     <main>
       {activeTab === 'ingest' && <section className="workspace-grid fade-in">
@@ -141,9 +143,10 @@ function App() {
               <div><h3>Statutory compliance checklist</h3><ul className="checklist">{(analysis.risks || []).map((item, index) => <li key={index} className={item.status}><span>{item.status === 'detected' ? <Check size={14} /> : '!'}</span><div><b>{item.name.replace(/^Missing: /, '')}</b><small>{item.explanation}</small></div></li>)}</ul></div>
             </div>}
             <div className="report-actions">
-              <button className="button primary" onClick={anchorDocument} disabled={busy || !!receipt || !stagedHash}><ShieldCheck size={17} /> {receipt ? 'Anchored' : busy ? 'Anchoring...' : 'Anchor to Ledger'}</button>
+              <button className="button primary" onClick={anchorDocument} disabled={busy || !!receipt || !stagedHash || !isOnline}><ShieldCheck size={17} /> {receipt ? 'Anchored' : busy ? 'Anchoring...' : 'Anchor to Ledger'}</button>
               <button className="button ghost" onClick={reset}>Clear record</button>
             </div>
+            {!isOnline && !receipt && <p className="error-message">Offline — anchoring needs connectivity. The fingerprint above is already computed and stays staged until the server is reachable.</p>}
           </div>}
           {receipt?.txHash && <div className="certificate"><div className="certificate-seal"><ShieldCheck size={32} /></div><div><p className="eyebrow">CERTIFICATE OF EVIDENTIARY INTEGRITY</p><h2>BNSS Sec. 63 Compliant</h2><p>Fingerprint anchored by the server relayer and confirmed against the browser hash.</p><small>Case {receipt.caseId} · block {receipt.blockNumber} · TX <code>{shortHash(receipt.txHash)}</code></small></div></div>}
           {error && <p className="error-message">{error}</p>}
@@ -161,8 +164,9 @@ function App() {
             <label style={controlLabel} htmlFor="docket-case-id">Case ID</label>
             <input id="docket-case-id" style={controlInput} value={docketId} onChange={(event) => setDocketId(event.target.value)} placeholder="e.g. 104-2026" />
           </div>
-          <button className="button primary" style={{ alignSelf: 'flex-end' }} onClick={loadDocket} disabled={busy}><Activity size={17} /> {busy ? 'Loading...' : 'Load docket'}</button>
+          <button className="button primary" style={{ alignSelf: 'flex-end' }} onClick={loadDocket} disabled={busy || !isOnline}><Activity size={17} /> {busy ? 'Loading...' : 'Load docket'}</button>
         </div>
+        {!isOnline && <p className="error-message">Offline — the custody docket is read from the ledger and cannot be loaded without connectivity.</p>}
         {error && <p className="error-message">{error}</p>}
         {docket?.length === 0 && <p className="error-message">No records anchored against this Case ID yet.</p>}
         {docket?.length > 0 && <div className="timeline">{docket.map((record, index) => <div className="timeline-event" key={record.evidenceHash}>

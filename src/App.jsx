@@ -2,7 +2,19 @@ import { useState } from 'react';
 import { Activity, ArrowRight, Check, Clipboard, FileCheck2, Fingerprint, LockKeyhole, ShieldCheck, Upload, Wifi, WifiOff } from 'lucide-react';
 import { API_BASE } from './config';
 import { useOnlineStatus } from './useOnlineStatus';
+import { useCaptureQueue } from './useCaptureQueue';
 import './App.css';
+
+// How each queue state reads in the UI. "duplicate" is deliberately not "anchored": the
+// contract rejected a second submission of a document already on the ledger, and the
+// officer should see that plainly rather than a success that did not happen.
+const QUEUE_STATUS = {
+  pending: { dot: 'amber', label: 'Pending — waiting for connectivity' },
+  syncing: { dot: 'amber', label: 'Syncing to the ledger…' },
+  failed: { dot: 'amber', label: 'Failed — still held on this device' },
+  anchored: { dot: 'green', label: 'Anchored on the ledger' },
+  duplicate: { dot: 'amber', label: 'Already on ledger — not re-anchored' },
+};
 
 const DOC_TYPES = ['FIR', 'Panchnama', 'SeizureMemo', 'ForensicReport', 'Chargesheet'];
 
@@ -45,10 +57,26 @@ function App() {
   const [verifyResult, setVerifyResult] = useState(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [queuedNotice, setQueuedNotice] = useState(null);
   const { isOnline } = useOnlineStatus();
+  const queue = useCaptureQueue(isOnline);
 
   const switchTab = (tab) => { setActiveTab(tab); setError(''); };
-  const reset = () => { setFile(null); setStagedHash(''); setReceipt(null); setError(''); };
+  const reset = () => { setFile(null); setStagedHash(''); setReceipt(null); setError(''); setQueuedNotice(null); };
+
+  // Offline capture: hold the file and its fingerprint on the device instead of posting.
+  // Deliberately separate from anchorDocument so the online path is untouched.
+  const queueDocument = async () => {
+    if (!file || !caseId.trim() || !stagedHash) return;
+    setBusy(true); setError('');
+    try {
+      const persisted = await queue.enqueue({ file, caseId: caseId.trim(), docType, hash: stagedHash });
+      setQueuedNotice({ caseId: caseId.trim(), docType, hash: stagedHash, capturedAt: Date.now(), persisted });
+      setFile(null); setStagedHash(''); setReceipt(null);
+    } catch (queueError) {
+      setError(`Could not hold this capture on the device: ${queueError.message}`);
+    } finally { setBusy(false); }
+  };
 
   // Stage only: hash locally so the record can be reviewed before anything is committed.
   const stageDocument = async (selectedFile) => {
@@ -143,13 +171,56 @@ function App() {
               <div><h3>Statutory compliance checklist</h3><ul className="checklist">{(analysis.risks || []).map((item, index) => <li key={index} className={item.status}><span>{item.status === 'detected' ? <Check size={14} /> : '!'}</span><div><b>{item.name.replace(/^Missing: /, '')}</b><small>{item.explanation}</small></div></li>)}</ul></div>
             </div>}
             <div className="report-actions">
-              <button className="button primary" onClick={anchorDocument} disabled={busy || !!receipt || !stagedHash || !isOnline}><ShieldCheck size={17} /> {receipt ? 'Anchored' : busy ? 'Anchoring...' : 'Anchor to Ledger'}</button>
+              <button className="button primary" onClick={isOnline ? anchorDocument : queueDocument} disabled={busy || !!receipt || !stagedHash}><ShieldCheck size={17} /> {receipt ? 'Anchored' : busy ? (isOnline ? 'Anchoring...' : 'Queueing...') : isOnline ? 'Anchor to Ledger' : 'Queue for Sync'}</button>
               <button className="button ghost" onClick={reset}>Clear record</button>
             </div>
-            {!isOnline && !receipt && <p className="error-message">Offline — anchoring needs connectivity. The fingerprint above is already computed and stays staged until the server is reachable.</p>}
+            {!isOnline && !receipt && <p className="error-message">Offline — this capture will be held on the device and anchored automatically when the evidence server is reachable.</p>}
           </div>}
           {receipt?.txHash && <div className="certificate"><div className="certificate-seal"><ShieldCheck size={32} /></div><div><p className="eyebrow">CERTIFICATE OF EVIDENTIARY INTEGRITY</p><h2>BNSS Sec. 63 Compliant</h2><p>Fingerprint anchored by the server relayer and confirmed against the browser hash.</p><small>Case {receipt.caseId} · block {receipt.blockNumber} · TX <code>{shortHash(receipt.txHash)}</code></small></div></div>}
+          {queuedNotice && <div className="certificate">
+            <div className="certificate-seal"><Upload size={32} /></div>
+            <div>
+              <p className="eyebrow">HELD FOR SYNC</p>
+              <h2>Captured offline</h2>
+              <p>{queuedNotice.docType} for case {queuedNotice.caseId} is stored on this device. It anchors automatically when the evidence server is reachable.</p>
+              <small>Captured locally {new Date(queuedNotice.capturedAt).toLocaleString()} · <code>{shortHash(queuedNotice.hash)}</code></small>
+              {!queuedNotice.persisted && <p className="error-message">Device storage is unavailable — this capture is held in memory only and will not survive a reload.</p>}
+            </div>
+          </div>}
           {error && <p className="error-message">{error}</p>}
+
+          {queue.items.length > 0 && <section className="timeline-view fade-in" style={{ marginTop: '22px' }}>
+            <div className="section-heading">
+              <div>
+                <p className="eyebrow">OFFLINE CAPTURE QUEUE</p>
+                <h2>Held on this device</h2>
+                <p>Captures wait here until the evidence server is reachable, then anchor in the order they were taken. Capture times are recorded by this device, not by the ledger.</p>
+              </div>
+              <span className="case-state">{queue.items.filter((item) => item.status === 'pending' || item.status === 'failed').length} PENDING{queue.syncing ? ' · SYNCING' : ''}</span>
+            </div>
+            <div className="timeline">
+              {queue.items.map((item, index) => <div className="timeline-event" key={item.id}>
+                <div className="timeline-marker">{index + 1}</div>
+                <div className="timeline-content">
+                  <small>Captured locally {new Date(item.capturedAt).toLocaleString()}</small>
+                  <h3>{item.docType}</h3>
+                  <p>Case {item.caseId}</p>
+                  <p><code>{shortHash(item.hash)}</code></p>
+                  <p><span className={`signal-dot ${(QUEUE_STATUS[item.status] || QUEUE_STATUS.pending).dot}`} style={item.status === 'failed' ? { background: 'var(--crimson)' } : undefined} /> {(QUEUE_STATUS[item.status] || QUEUE_STATUS.pending).label}</p>
+                  {item.status === 'anchored' && <p>Anchored {new Date(item.anchoredAt).toLocaleString()} <small>({item.anchorTimeSource === 'chain' ? 'block time' : 'device clock'})</small></p>}
+                  {item.status === 'duplicate' && <p>This exact document was already on the ledger, so the contract rejected a second submission. It was anchored {new Date(item.anchoredAt).toLocaleString()} <small>({item.anchorTimeSource === 'chain' ? 'block time' : 'device clock'})</small>.</p>}
+                  {item.status === 'failed' && <>
+                    <p className="error-message">{item.error}</p>
+                    <button className="button ghost" onClick={() => queue.retry(item.id)} disabled={queue.syncing}>Retry</button>
+                  </>}
+                </div>
+              </div>)}
+            </div>
+            {/* Rehearsal aid: shown in preview too, since that is where the demo runs. */}
+            <div className="report-actions">
+              <button className="button ghost" onClick={queue.clearAll} disabled={queue.syncing}>Clear queue (rehearsal reset)</button>
+            </div>
+          </section>}
         </div>
         <aside className="side-column">
           {analysis && <div className="metric-card"><p className="eyebrow">EVIDENTIARY HEALTH</p><div className="gauge" style={{ '--score': `${score * 3.6}deg` }}><strong>{score}%</strong><small>compliance</small></div><p className="metric-note">Based on statutory fields, custody markers, and seal verification.</p></div>}

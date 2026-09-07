@@ -26,4 +26,21 @@ export default defineConfig([
       'no-unused-vars': ['error', { varsIgnorePattern: '^[A-Z_]' }],
     },
   },
+  {
+    // server/ is CommonJS with its own package.json, so it gets Node globals
+    // instead of the browser ones the frontend block applies. Flat config merges
+    // `globals` rather than replacing them, so the browser set is switched off
+    // explicitly first — otherwise a stray `document` in server code lints clean.
+    files: ['server/**/*.js'],
+    languageOptions: {
+      globals: {
+        ...Object.fromEntries(Object.keys(globals.browser).map((name) => [name, 'off'])),
+        ...globals.node,
+      },
+      sourceType: 'commonjs',
+      parserOptions: {
+        sourceType: 'commonjs',
+      },
+    },
+  },
 ])

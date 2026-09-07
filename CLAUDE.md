@@ -19,7 +19,10 @@ SIH 2026 entry — problem statement **26190**, NCRB / Ministry of Home Affairs,
 | `scripts/deploy.cjs` | Hardhat deploy script |
 | `artifacts/`, `cache/` | Hardhat output, gitignored — `relayer.js` reads the ABI from here |
 
-Ports: Vite 5173 · Express 5000 · Hardhat node 8545 · MinIO 9000 (API) / 9001 (console).
+Ports: Vite dev **5180** · Vite preview **5181** · Express 5000 · Hardhat node 8545 ·
+MinIO 9000 (API) / 9001 (console). The Vite ports are pinned with `strictPort` — a service
+worker and its caches belong to one origin, port included, so a drifting port leaves stale
+workers registered on old origins. Do not unpin them.
 
 ## CRITICAL: two module systems
 
@@ -82,6 +85,35 @@ cd server && npm install && pip install -r requirements.txt
 Sample PDFs for testing: `sample_fir.pdf`, `sample_fir_tampered.pdf`, `sample_forensic.pdf`,
 and `server/sample_docs/`.
 
+## PWA / offline shell
+
+`vite-plugin-pwa` with the **injectManifest** strategy and a custom worker in `src/sw.js`
+(NetworkFirst for navigations, StaleWhileRevalidate for same-origin GETs). Nothing under
+`/api/` is ever cached — a stale custody docket would be actively wrong — and the worker
+enforces that twice: the API is cross-origin, plus an explicit pathname guard.
+
+**Run the offline demo against a production build, not the dev server:**
+
+```bash
+npm run build && npm run preview   # http://localhost:5181
+```
+
+In production the boot graph is six files and all of them are precached, so offline boot is
+deterministic. In dev the precache holds only `index.html`; the app's modules are served on
+demand under `?v=` hashes that change whenever Vite re-optimizes deps, so anything cached
+against an old hash is dead weight. Dev offline is best-effort by decision — do not sink
+time into it.
+
+To test offline: DevTools → Network → Offline, then reload with **`Ctrl+R`**. Never
+`Ctrl+Shift+R` — a hard reload bypasses the service worker by design and will always fail,
+however correct the worker is. While iterating, tick Application → Service Workers →
+"Update on reload" so the newest worker takes over.
+
+`src/useOnlineStatus.js` drives the header indicator. It does not trust `navigator.onLine`
+(true whenever any interface is up, wrong on a station LAN with no route to the server); it
+confirms with a `HEAD` of the API root every 30s, treating any response — 404 included — as
+online and only a network-level throw as offline.
+
 ## Conventions
 
 - **Plain JavaScript only. Never TypeScript.** `@types/*` packages are leftovers; ignore them.
@@ -89,4 +121,5 @@ and `server/sample_docs/`.
 - **Do not rewrite `src/App.css`.** The styling is good. Reuse the existing class names
   (`app-shell`, `workflow-tabs`, `dropzone`, `report-panel`, `side-column`, `certificate`,
   `timeline-view`, …) rather than inventing new ones or swapping in a utility framework.
-- `npm run lint` at the root runs ESLint over the frontend.
+- `npm run lint` at the root runs ESLint over the frontend and `server/`; `dist` and
+  `dev-dist` (the worker generated in dev) are ignored as build output.

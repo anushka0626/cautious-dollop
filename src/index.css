@@ -68,3 +68,32 @@ button:focus-visible {
     background-color: #f9f9f9;
   }
 }
+
+.timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  margin-top: 1.5rem;
+  max-height: 65vh;
+  overflow-y: auto;
+  padding-right: 0.5rem;
+}
+
+.timeline-event {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  background: var(--card, #1e293b);
+  border: 1px solid var(--border, #334155);
+  border-radius: 8px;
+  padding: 1rem;
+}
+
+.timeline-content {
+  flex: 1;
+  min-width: 0; /* Prevents overflow from long SHA-256 strings */
+}
+
+.timeline-content code {
+  word-break: break-all;
+}

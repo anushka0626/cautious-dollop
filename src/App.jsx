@@ -1,11 +1,14 @@
 import { useState, useEffect } from 'react';
-import { Activity, ArrowRight, Check, AlertTriangle, Clipboard, FileCheck2, Fingerprint, LockKeyhole, ShieldCheck, Upload, Wifi, RefreshCw } from 'lucide-react';
+import { 
+  Activity, ArrowRight, Check, AlertTriangle, Clipboard, FileCheck2, 
+  Fingerprint, LockKeyhole, ShieldCheck, Upload, Wifi, RefreshCw, 
+  Search, Download, Eye, FileText, Bug
+} from 'lucide-react';
 import './App.css';
 
 const API_BASE_URL = 'http://localhost:5000/api';
 const DEFAULT_CASE_ID = 'MH-PUN-2026-001';
 
-// Helper: Calculate browser-side SHA-256 hex digest
 async function computeFileSHA256(file) {
   const buffer = await file.arrayBuffer();
   const digestBuffer = await crypto.subtle.digest('SHA-256', buffer);
@@ -16,8 +19,10 @@ async function computeFileSHA256(file) {
 function App() {
   const [activeTab, setActiveTab] = useState('ingest');
   
-  // Ingest State
+  // Ingestion State
   const [file, setFile] = useState(null);
+  const [filePreviewUrl, setFilePreviewUrl] = useState(null);
+  const [fileHash, setFileHash] = useState('');
   const [caseId, setCaseId] = useState(DEFAULT_CASE_ID);
   const [docType, setDocType] = useState('FIR');
   const [analysis, setAnalysis] = useState(null);
@@ -26,34 +31,46 @@ function App() {
   const [txHash, setTxHash] = useState('');
   const [blockNumber, setBlockNumber] = useState('');
 
-  // Person 1: Dynamic Timeline State
+  // Timeline State
+  const [activeDocketCase, setActiveDocketCase] = useState(DEFAULT_CASE_ID);
   const [docketList, setDocketList] = useState([]);
   const [timelineLoading, setTimelineLoading] = useState(false);
 
-  // Person 1: Live Tamper Check State
-  const [verifyFile, setVerifyFile] = useState(null);
-  const [computedVerifyHash, setComputedVerifyHash] = useState('');
-  const [manualHash, setManualHash] = useState('');
+  // Verification State
+  const [verifyInput, setVerifyInput] = useState('');
   const [verifyResult, setVerifyResult] = useState(null);
   const [tamperStatus, setTamperStatus] = useState(null); // 'authentic' | 'tampered'
 
   const resetIngest = () => { 
+    if (filePreviewUrl) URL.revokeObjectURL(filePreviewUrl);
     setFile(null); 
+    setFilePreviewUrl(null);
+    setFileHash('');
     setAnalysis(null); 
     setError(''); 
     setTxHash(''); 
     setBlockNumber('');
   };
 
-  // 1. Analyze Document
-  const processDocument = async (selectedFile) => {
+  const handleFileDrop = async (selectedFile) => {
     if (!selectedFile) return;
-    setFile(selectedFile); 
-    setAnalysis(null); 
-    setError(''); 
+    if (filePreviewUrl) URL.revokeObjectURL(filePreviewUrl);
+
+    setFile(selectedFile);
+    if (selectedFile.type.startsWith('image/')) {
+      setFilePreviewUrl(URL.createObjectURL(selectedFile));
+    } else {
+      setFilePreviewUrl(null);
+    }
+
+    setAnalysis(null);
+    setError('');
     setBusy(true);
 
     try {
+      const clientHash = await computeFileSHA256(selectedFile);
+      setFileHash(clientHash);
+
       const formData = new FormData();
       formData.append('file', selectedFile);
 
@@ -66,7 +83,9 @@ function App() {
       if (!response.ok || data.error) throw new Error(data.error || 'Server analysis failed');
 
       const missingCount = data.procedural_flags ? data.procedural_flags.length : 0;
-      const calculatedScore = Math.max(25, 100 - (missingCount * 25));
+      const calculatedScore = data.sections_detected?.length === 0 
+        ? 30 
+        : Math.max(30, 100 - (missingCount * 15));
 
       setAnalysis({
         rawText: data.raw_text,
@@ -76,27 +95,25 @@ function App() {
         score: calculatedScore
       });
     } catch (requestError) { 
-      setError(`Analysis failed: ${requestError.message}`); 
+      setError(`Analysis notice: ${requestError.message}`); 
     } finally { 
       setBusy(false); 
     }
   };
 
-  // 2. Anchor Encrypted File to Sepolia + MinIO
   const registerDocument = async () => {
     if (!file) return;
     setBusy(true); 
     setError('');
 
     try {
-      // If records already exist in docket, link to the latest hash as parentHash
-      const latestParentHash = docketList.length > 0 ? docketList[docketList.length - 1].evidenceHash : null;
+      const latestParent = docketList.length > 0 ? docketList[docketList.length - 1].evidenceHash : null;
 
       const formData = new FormData();
       formData.append('file', file);
       formData.append('caseId', caseId.trim() || DEFAULT_CASE_ID);
       formData.append('docType', docType);
-      if (latestParentHash) formData.append('parentHash', latestParentHash);
+      if (latestParent) formData.append('parentHash', latestParent);
 
       const response = await fetch(`${API_BASE_URL}/evidence/upload`, {
         method: 'POST',
@@ -108,53 +125,43 @@ function App() {
 
       setTxHash(data.txHash);
       setBlockNumber(data.blockNumber);
-      setAnalysis(prev => ({ ...prev, docHash: data.evidenceHash, storageURI: data.storageURI }));
-      
-      // Auto-refresh dynamic docket
-      fetchDocket(caseId);
-    } catch (transactionError) { 
-      setError(transactionError.message || 'Transaction failed.'); 
+      setActiveDocketCase(caseId.trim() || DEFAULT_CASE_ID);
+      fetchDocket(caseId.trim() || DEFAULT_CASE_ID);
+    } catch (err) { 
+      setError(err.message || 'Transaction failed.'); 
     } finally { 
       setBusy(false); 
     }
   };
 
-  // 3. Person 1 Deliverable: Fetch Chronological Chain-of-Custody Docket
-  const fetchDocket = async (searchCaseId) => {
+  const fetchDocket = async (targetCase) => {
     setTimelineLoading(true);
-    setError('');
     try {
-      const response = await fetch(`${API_BASE_URL}/evidence/docket/${searchCaseId.trim() || DEFAULT_CASE_ID}`);
-      const data = await response.json();
-      if (response.ok && data.docket) {
-        setDocketList(data.docket);
-      }
+      const res = await fetch(`${API_BASE_URL}/evidence/docket/${targetCase.trim() || DEFAULT_CASE_ID}`);
+      const data = await res.json();
+      if (res.ok && data.docket) setDocketList(data.docket);
     } catch (err) {
-      console.error('Failed to load docket:', err);
+      console.error(err);
     } finally {
       setTimelineLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchDocket(caseId);
+    fetchDocket(activeDocketCase);
   }, []);
 
-  // 4. Person 1 Deliverable: File Tamper-Check via Live Hashing
-  const handleVerifyFileUpload = async (selectedFile) => {
-    if (!selectedFile) return;
-    setVerifyFile(selectedFile);
+  const verifyHashOrFile = async (inputVal) => {
+    const queryTarget = (typeof inputVal === 'string' ? inputVal : verifyInput).trim();
+    if (!queryTarget) return;
+
+    setBusy(true);
+    setError('');
     setTamperStatus(null);
     setVerifyResult(null);
-    setError('');
-    setBusy(true);
 
     try {
-      const liveHash = await computeFileSHA256(selectedFile);
-      setComputedVerifyHash(liveHash);
-
-      // Verify computed hash directly against Sepolia
-      const response = await fetch(`${API_BASE_URL}/evidence/verify/${liveHash}`);
+      const response = await fetch(`${API_BASE_URL}/evidence/verify/${queryTarget}`);
       const data = await response.json();
 
       if (data.authentic) {
@@ -164,10 +171,38 @@ function App() {
         setTamperStatus('tampered');
       }
     } catch (err) {
-      setError(`Verification query failed: ${err.message}`);
+      setError(`Query failed: ${err.message}`);
     } finally {
       setBusy(false);
     }
+  };
+
+  const handleVerifyFileDrop = async (droppedFile) => {
+    if (!droppedFile) return;
+    setBusy(true);
+    const computed = await computeFileSHA256(droppedFile);
+    setVerifyInput(computed);
+    await verifyHashOrFile(computed);
+  };
+
+  // Demo helper: Generate a 1-pixel altered tamper demonstration payload
+  const runTamperSimulation = async () => {
+    if (!fileHash) {
+      setError("Anchor or drop an authentic document first to run tamper simulation.");
+      return;
+    }
+    // Flip the last hexadecimal digit
+    const lastChar = fileHash.slice(-1);
+    const flippedChar = lastChar === 'a' ? 'b' : 'a';
+    const tamperedHash = fileHash.slice(0, -1) + flippedChar;
+    
+    setVerifyInput(tamperedHash);
+    setActiveTab('verify');
+    await verifyHashOrFile(tamperedHash);
+  };
+
+  const downloadCertificate = (hash) => {
+    window.open(`${API_BASE_URL}/evidence/certificate/${hash}`, '_blank');
   };
 
   const copyHash = (hash) => navigator.clipboard.writeText(hash);
@@ -187,32 +222,31 @@ function App() {
         <div className="status-row">
           <span><Wifi size={14} /> Network: Sepolia Testnet <b>Active</b></span>
           <span><ShieldCheck size={14} /> BSA Sec. 63 Engine <b>Online</b></span>
-          <span><LockKeyhole size={14} /> Client Encryption <b>Active</b></span>
+          <span><LockKeyhole size={14} /> AES-256 Storage <b>Active</b></span>
         </div>
       </header>
 
-      <nav className="workflow-tabs" aria-label="Evidence workflow">
-        <button className={activeTab === 'ingest' ? 'active' : ''} onClick={() => { setActiveTab('ingest'); setError(''); }}>
-          <Upload size={16} /> Evidence Ingestion &amp; Ledger Anchoring
+      <nav className="workflow-tabs">
+        <button className={activeTab === 'ingest' ? 'active' : ''} onClick={() => setActiveTab('ingest')}>
+          <Upload size={16} /> Evidence Ingestion &amp; Anchoring
         </button>
-        <button className={activeTab === 'timeline' ? 'active' : ''} onClick={() => { setActiveTab('timeline'); fetchDocket(caseId); }}>
+        <button className={activeTab === 'timeline' ? 'active' : ''} onClick={() => { setActiveTab('timeline'); fetchDocket(activeDocketCase); }}>
           <Activity size={16} /> Chain of Custody Timeline
         </button>
-        <button className={activeTab === 'verify' ? 'active' : ''} onClick={() => { setActiveTab('verify'); setError(''); }}>
+        <button className={activeTab === 'verify' ? 'active' : ''} onClick={() => setActiveTab('verify')}>
           <FileCheck2 size={16} /> Judicial Integrity &amp; Tamper Check
         </button>
       </nav>
 
       <main>
-        {/* TAB 1: INGEST */}
         {activeTab === 'ingest' && (
           <section className="workspace-grid fade-in">
             <div className="primary-column">
               <div className="section-heading">
                 <div>
-                  <p className="eyebrow">01 / ingest</p>
-                  <h2>Anchor evidence to the ledger</h2>
-                  <p>Analyse, redact, and notarize dockets without exposing plaintext PII on-chain.</p>
+                  <p className="eyebrow">01 / Ingest</p>
+                  <h2>Notarize Legal Investigation Docket</h2>
+                  <p>Parse handwritten or printed NCRB Form-IF1 records, mask PII, and anchor to Sepolia.</p>
                 </div>
                 <span className="live-tag"><span /> LIVE PIPELINE</span>
               </div>
@@ -243,7 +277,7 @@ function App() {
                     <input 
                       type="file" 
                       accept="image/*,application/pdf" 
-                      onChange={(event) => processDocument(event.target.files[0])} 
+                      onChange={(event) => handleFileDrop(event.target.files[0])} 
                     />
                     {busy ? <div className="spinner" /> : (
                       <>
@@ -256,13 +290,30 @@ function App() {
                 </div>
               )}
 
+              {fileHash && (
+                <div className="hash-box" style={{ marginTop: '1rem' }}>
+                  <div>
+                    <small>CALCULATED SHA-256 DIGEST</small>
+                    <code>{fileHash}</code>
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button title="Simulate Tamper Detection" className="button ghost" onClick={runTamperSimulation} style={{ padding: '6px 10px', fontSize: '0.75rem', gap: '4px' }}>
+                      <Bug size={14} /> Test Tamper Diff
+                    </button>
+                    <button title="Copy SHA-256 fingerprint" onClick={() => copyHash(fileHash)}>
+                      <Clipboard size={17} />
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {analysis && (
-                <div className="report-panel">
+                <div className="report-panel" style={{ marginTop: '1rem' }}>
                   <div className="report-top">
                     <div>
-                      <p className="eyebrow">ANALYSIS REPORT</p>
-                      <h2>{analysis.sections.length > 0 ? `BNS Section(s): ${analysis.sections.join(', ')}` : 'Investigation Intake'}</h2>
-                      <span className="document-badge">PII Redacted &amp; Extracted</span>
+                      <p className="eyebrow">DOCKET EXTRACT</p>
+                      <h2>{analysis.sections.length > 0 ? `Sections Cited: ${analysis.sections.join(', ')}` : 'Investigation Record Intake'}</h2>
+                      <span className="document-badge">Presidio PII Anonymized</span>
                     </div>
                     <div className="gauge compact" style={{ '--score': `${score * 3.6}deg` }}>
                       <strong>{score}%</strong>
@@ -270,46 +321,50 @@ function App() {
                     </div>
                   </div>
 
-                  {analysis.docHash && (
-                    <div className="hash-box">
-                      <div>
-                        <small>SHA-256 LEDGER HASH</small>
-                        <code>{analysis.docHash}</code>
+                  {/* Side-by-Side Raw Visual vs Redacted Text */}
+                  <div className="side-by-side-diff" style={{ display: 'grid', gridTemplateColumns: filePreviewUrl ? '1fr 1fr' : '1fr', gap: '1rem', marginTop: '1rem' }}>
+                    {filePreviewUrl && (
+                      <div className="diff-pane" style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: '8px', padding: '1rem' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
+                          <Eye size={15} /> <b>Original Intake Scan</b>
+                        </div>
+                        <img 
+                          src={filePreviewUrl} 
+                          alt="Original document" 
+                          style={{ width: '100%', maxHeight: '250px', objectFit: 'contain', borderRadius: '4px', background: '#000' }} 
+                        />
                       </div>
-                      <button title="Copy fingerprint" onClick={() => copyHash(analysis.docHash)}>
-                        <Clipboard size={17} />
-                      </button>
-                    </div>
-                  )}
-
-                  <div className="report-columns">
-                    <div>
-                      <h3>Redacted Evidentiary Text</h3>
-                      <p className="summary" style={{ whiteSpace: 'pre-wrap', maxHeight: '200px', overflowY: 'auto' }}>
+                    )}
+                    <div className="diff-pane" style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: '8px', padding: '1rem' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
+                        <FileText size={15} /> <b>Presidio Redacted Text (BNSS Compliant)</b>
+                      </div>
+                      <pre className="summary" style={{ whiteSpace: 'pre-wrap', maxHeight: '250px', overflowY: 'auto', margin: 0, fontSize: '0.8rem', fontFamily: 'monospace' }}>
                         {analysis.redactedText || 'No text extracted.'}
-                      </p>
-                    </div>
-                    <div>
-                      <h3>Statutory Compliance Checklist</h3>
-                      <ul className="checklist">
-                        {analysis.flags.length === 0 ? (
-                          <li className="detected">
-                            <span><Check size={14} /></span>
-                            <div><b>All Statutory Ingredients Present</b><small>Document satisfies BNS/BNSS filing criteria.</small></div>
-                          </li>
-                        ) : (
-                          analysis.flags.map((flag, index) => (
-                            <li key={index} className="missing">
-                              <span>!</span>
-                              <div><b>Procedural Warning</b><small>{flag}</small></div>
-                            </li>
-                          ))
-                        )}
-                      </ul>
+                      </pre>
                     </div>
                   </div>
 
-                  <div className="report-actions">
+                  <div style={{ marginTop: '1rem' }}>
+                    <h3>Statutory Compliance Checklist (BNSS Sec. 173)</h3>
+                    <ul className="checklist">
+                      {analysis.flags.length === 0 ? (
+                        <li className="detected">
+                          <span><Check size={14} /></span>
+                          <div><b>Statutory Elements Verified</b><small>Document satisfies procedural criteria.</small></div>
+                        </li>
+                      ) : (
+                        analysis.flags.map((flag, index) => (
+                          <li key={index} className="missing">
+                            <span>!</span>
+                            <div><b>Procedural Requirement</b><small>{flag}</small></div>
+                          </li>
+                        ))
+                      )}
+                    </ul>
+                  </div>
+
+                  <div className="report-actions" style={{ marginTop: '1rem' }}>
                     <button 
                       className={`button primary ${txHash ? 'success-anchored' : ''}`} 
                       onClick={registerDocument} 
@@ -324,12 +379,12 @@ function App() {
               )}
 
               {txHash && (
-                <div className="certificate">
+                <div className="certificate" style={{ marginTop: '1rem' }}>
                   <div className="certificate-seal"><ShieldCheck size={32} /></div>
-                  <div>
+                  <div style={{ flex: 1 }}>
                     <p className="eyebrow">CERTIFICATE OF EVIDENTIARY INTEGRITY</p>
                     <h2>BSA Sec. 63 Admissible</h2>
-                    <p>File encrypted in MinIO. Cryptographic hash mined on Sepolia (Block #{blockNumber}).</p>
+                    <p>Encrypted in MinIO. Fingerprint permanently mined on Sepolia (Block #{blockNumber}).</p>
                     <small>
                       {new Date().toLocaleString()} ·{' '}
                       <a href={`https://sepolia.etherscan.io/tx/${txHash}`} target="_blank" rel="noreferrer" style={{ color: 'var(--emerald)', textDecoration: 'none' }}>
@@ -337,10 +392,17 @@ function App() {
                       </a>
                     </small>
                   </div>
+                  <button 
+                    className="button primary" 
+                    onClick={() => downloadCertificate(fileHash)}
+                    style={{ gap: '6px', fontSize: '0.8rem' }}
+                  >
+                    <Download size={14} /> Download Certificate
+                  </button>
                 </div>
               )}
 
-              {error && <p className="error-message">{error}</p>}
+              {error && <p className="error-message" style={{ marginTop: '1rem' }}>{error}</p>}
             </div>
 
             <aside className="side-column">
@@ -350,31 +412,41 @@ function App() {
                   <strong>{score}%</strong>
                   <small>compliance</small>
                 </div>
-                <p className="metric-note">Evaluated against statutory BNS/BNSS benchmarks and PII sensitivity parameters.</p>
+                <p className="metric-note">Evaluated against statutory procedural benchmarks and PII sensitivity parameters.</p>
               </div>
 
               <div className="signal-card">
                 <p className="eyebrow">PROCESSING SIGNALS</p>
-                <div><span className="signal-dot green" /> Local PII Anonymization</div>
-                <div><span className="signal-dot green" /> AES-256-GCM Object Store</div>
-                <div><span className="signal-dot green" /> Zero-Gas Relayer Active</div>
+                <div><span className="signal-dot green" /> Presidio PII Masking</div>
+                <div><span className="signal-dot green" /> MiniLM BNSS 173 Semantics</div>
+                <div><span className="signal-dot green" /> Client AES-256-GCM</div>
+                <div><span className="signal-dot green" /> Zero-Gas Sepolia Relayer</div>
               </div>
             </aside>
           </section>
         )}
 
-        {/* TAB 2: DYNAMIC CHAIN OF CUSTODY (PERSON 1) */}
         {activeTab === 'timeline' && (
           <section className="timeline-view fade-in">
             <div className="section-heading">
               <div>
-                <p className="eyebrow">02 / custody</p>
+                <p className="eyebrow">02 / Custody</p>
                 <h2>Chronological Chain of Custody</h2>
-                <p>Real-time parent-child linked evidentiary trail fetched directly from the Sepolia ledger.</p>
+                <p>Parent-child linked evidentiary trail fetched live from Sepolia.</p>
               </div>
               <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                <span className="case-state">DOCKET: {caseId}</span>
-                <button className="button ghost" onClick={() => fetchDocket(caseId)} title="Refresh docket">
+                <input 
+                  type="text" 
+                  value={activeDocketCase} 
+                  onChange={(e) => setActiveDocketCase(e.target.value)} 
+                  onKeyDown={(e) => { if (e.key === 'Enter') fetchDocket(activeDocketCase); }}
+                  placeholder="Enter Case ID"
+                  style={{ padding: '6px 12px', borderRadius: '6px', border: '1px solid var(--border)', background: 'var(--card)', fontSize: '0.85rem' }}
+                />
+                <button className="button primary" onClick={() => fetchDocket(activeDocketCase)} style={{ padding: '6px 12px' }}>
+                  Switch Docket
+                </button>
+                <button className="button ghost" onClick={() => fetchDocket(activeDocketCase)} title="Refresh docket">
                   <RefreshCw size={14} className={timelineLoading ? 'spinner' : ''} />
                 </button>
               </div>
@@ -383,8 +455,8 @@ function App() {
             {docketList.length === 0 ? (
               <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--muted)', background: 'var(--card)', borderRadius: '12px' }}>
                 <Activity size={36} style={{ marginBottom: '1rem', opacity: 0.5 }} />
-                <p>No anchored documents found for case docket <b>{caseId}</b>.</p>
-                <small>Anchor an initial FIR in Tab 01 to start the chain.</small>
+                <p>No anchored documents found for case docket <b>{activeDocketCase}</b>.</p>
+                <small>Anchor an initial FIR in Tab 01 to initialize the chain.</small>
               </div>
             ) : (
               <div className="timeline">
@@ -392,12 +464,21 @@ function App() {
                   <div className="timeline-event" key={record.evidenceHash}>
                     <div className="timeline-marker">{index + 1}</div>
                     <div className="timeline-content">
-                      <small>{new Date(record.timestamp * 1000).toLocaleString()}</small>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <small>{new Date(record.timestamp * 1000).toLocaleString()}</small>
+                        <button 
+                          onClick={() => downloadCertificate(record.evidenceHash)} 
+                          className="button ghost" 
+                          style={{ padding: '4px 8px', fontSize: '0.75rem', gap: '4px' }}
+                        >
+                          <Download size={13} /> BSA Sec. 63 PDF
+                        </button>
+                      </div>
                       <h3>{record.docType}</h3>
-                      <p><b>Hash:</b> <code>{record.evidenceHash.slice(0, 18)}...</code></p>
+                      <p><b>SHA-256:</b> <code>{record.evidenceHash}</code></p>
                       <small style={{ color: 'var(--muted)' }}>
                         {record.parentHash !== '0x0000000000000000000000000000000000000000000000000000000000000000' 
-                          ? `Parent: ${record.parentHash.slice(0, 12)}...` 
+                          ? `Parent Hash: ${record.parentHash.slice(0, 18)}...` 
                           : 'Initial Master Record (Root FIR)'}
                       </small>
                     </div>
@@ -409,14 +490,13 @@ function App() {
           </section>
         )}
 
-        {/* TAB 3: JUDICIAL TAMPER CHECK & HASH DIFFING (PERSON 1) */}
         {activeTab === 'verify' && (
           <section className="verify-view fade-in">
             <div className="section-heading">
               <div>
-                <p className="eyebrow">03 / judicial review</p>
+                <p className="eyebrow">03 / Judicial Review</p>
                 <h2>Live Evidentiary Integrity &amp; Tamper Check</h2>
-                <p>Drop any document to calculate its real-time cryptographic hash and verify authenticity on Sepolia.</p>
+                <p>Drop a file or paste its 64-character SHA-256 fingerprint to verify authenticity on Sepolia.</p>
               </div>
               <span className="case-state">IMMUTABLE QUERY</span>
             </div>
@@ -425,28 +505,28 @@ function App() {
               <label className={`dropzone ${busy ? 'processing' : ''}`}>
                 <input 
                   type="file" 
-                  onChange={(event) => handleVerifyFileUpload(event.target.files[0])} 
+                  onChange={(event) => handleVerifyFileDrop(event.target.files[0])} 
                 />
                 {busy ? <div className="spinner" /> : (
                   <>
                     <FileCheck2 size={38} />
-                    <strong>{verifyFile ? verifyFile.name : 'Drop file here to verify against Sepolia'}</strong>
-                    <small>Computes SHA-256 in-browser and cross-checks the on-chain registry</small>
+                    <strong>Drop any document here to verify instantly</strong>
+                    <small>Computes the cryptographic fingerprint and queries Sepolia</small>
                   </>
                 )}
               </label>
 
-              {computedVerifyHash && (
-                <div className="hash-box">
-                  <div>
-                    <small>COMPUTED FILE DIGEST</small>
-                    <code>{computedVerifyHash}</code>
-                  </div>
-                  <button title="Copy fingerprint" onClick={() => copyHash(computedVerifyHash)}>
-                    <Clipboard size={17} />
-                  </button>
-                </div>
-              )}
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <input 
+                  value={verifyInput} 
+                  onChange={(e) => setVerifyInput(e.target.value)} 
+                  placeholder="Or paste 0x... SHA-256 document fingerprint"
+                  style={{ flex: 1, padding: '10px 14px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--card)' }}
+                />
+                <button className="button primary" onClick={() => verifyHashOrFile(verifyInput)} disabled={busy}>
+                  <Search size={16} /> Verify
+                </button>
+              </div>
 
               {tamperStatus === 'authentic' && verifyResult && (
                 <div className="certificate verification-certificate" style={{ borderColor: 'var(--emerald)' }}>
@@ -456,12 +536,19 @@ function App() {
                   <div>
                     <p className="eyebrow" style={{ color: 'var(--emerald)' }}>VERIFICATION PASSED — 100% AUTHENTIC</p>
                     <h2>BSA Sec. 63 Validated</h2>
-                    <p>Cryptographic hash matches the on-chain master record exactly. No bit-level alterations detected.</p>
-                    <div className="result-meta">
+                    <p>File digest matches the Sepolia master record exactly. Zero alterations detected.</p>
+                    <div className="result-meta" style={{ marginBottom: '12px' }}>
                       <span>Mined: {new Date(verifyResult.timestamp * 1000).toLocaleString()}</span>
                       <span>Doc Type: <b>{verifyResult.docType}</b></span>
                       <span>Case: <code>{verifyResult.caseId}</code></span>
                     </div>
+                    <button 
+                      className="button primary" 
+                      onClick={() => downloadCertificate(verifyResult.evidenceHash)}
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                    >
+                      <Download size={15} /> Download Section 63 BSA Admissibility Certificate
+                    </button>
                   </div>
                 </div>
               )}
@@ -474,7 +561,7 @@ function App() {
                   <div>
                     <p className="eyebrow" style={{ color: '#ef4444' }}>TAMPER DETECTED — HASH MISMATCH</p>
                     <h2 style={{ color: '#ef4444' }}>Evidentiary Chain Broken</h2>
-                    <p>This file does not match any registered hash on the Sepolia ledger. It may have been edited, corrupted, or replaced.</p>
+                    <p>The computed digest does not match any record on the Sepolia ledger. This file has been altered or never notarized.</p>
                     <small style={{ color: '#ef4444' }}>Inadmissible under Section 63 BSA without valid attestation.</small>
                   </div>
                 </div>

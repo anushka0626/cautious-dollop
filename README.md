@@ -10,8 +10,8 @@ It automates PII anonymization, checks BNS/BNSS statutory benchmarks, stores AES
 
 - **Node.js**: v18+ (LTS v20 recommended)
 - **Python**: 3.10+
-- **Container Engine**: Podman (default on Fedora) or Docker
-- **System Packages** (Fedora):
+- **Container Engine**: Podman  or Docker
+- **System Packages** :
   ```bash
   sudo dnf install -y tesseract tesseract-langpack-hin
   ```
@@ -63,7 +63,7 @@ STORAGE_SECRET=veritas-secret-salt-2026
 ```
 ---
 ## 4. Installation & Running
-####  Terminal 1: AI Microservice (FastAPI + OCR + Presidio)
+####  Terminal 1: AI Microservice (FastAPI +Presidio + Sentence-Transformers)
 ```bash
 
 cd ai-service
@@ -96,10 +96,12 @@ Frontend runs on http://localhost:5173.
 ----
 ## 5. Core Architecture & Workflow
 
-    1. Ingest & Redact: Upload an FIR or seizure docket (image/PDF). The AI engine extracts text, masks sensitive victim/witness PII, and verifies BNS requirements.
-
-    2. Encrypt & Anchor: The backend encrypts the file with AES-256-GCM, pushes it to MinIO, and relays its SHA-256 fingerprint onto the Sepolia smart contract.
-
-    3. Chain of Custody: Chronological parent-child dockets are linked by caseId and parentHash.
-
-    4. Judicial Tamper Verification: Real-time hash comparison confirms document authenticity or detects bit-level tampering.
+   1. Intake & Semantic LexAudit: The AI microservice extracts raw text (OCR), redacts victim/witness PII via Microsoft Presidio, and evaluates substantive offenses and mandatory BNSS 173 pillars (Informant, Timestamp, Beat/Place, Section, Officer Signoff) using all-MiniLM-L6-v2 embeddings.
+   
+   2. AES-256-GCM & Zero-Gas Notarization: The Node relayer computes the SHA-256 hash, encrypts the document with AES-256-GCM into MinIO, and anchors metadata onto Ethereum Sepolia without requiring browser wallet popups.
+   
+   3. Dynamic Chain of Custody: Chronological records are linked cryptographically (parentHash) across distinct case dockets (caseId).
+   
+   4. Section 63 BSA PDF Certificate: Generates a judicial certificate on demand complete with custodial attestations, timestamping, transaction hash, and on-chain QR verification.
+   
+   5. Judicial Tamper Detection: Instantly verifies cryptographic hashes against Sepolia; any single-bit or 1-pixel alteration flags an evidentiary mismatch.

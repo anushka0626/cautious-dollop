@@ -1,0 +1,106 @@
+# Veritas Ledger 
+
+> **Smart India Hackathon 2026** | **Problem Statement ID:** 26190  
+> **Domain:** Ministry of Home Affairs (MHA) / Police, Judicial & Forensic Infrastructure  
+> **Title:** Secure Digital Document Management System for Legal & Investigation Documents
+
+Veritas Ledger is a tamper-proof digital evidence management system bridging police stations (CCTNS), forensic laboratories (e-Forensics), and criminal courts (e-Courts). The system provides automated Indic document understanding, local AES-256-GCM encrypted object storage, PII anonymization, statutory Bharatiya Nyaya Sanhita (BNS) compliance checking, and zero-gas cryptographic custody anchoring on an EVM ledger compliant with **Section 63 of the Bharatiya Sakshya Adhiniyam (BSA), 2023**.
+
+---
+
+## 🏛️ System Architecture
+
+```text
+Field Capture / Ingestion (PDF / Scanned Images)
+           │
+           ▼
+[FastAPI AI Service :8000] ──► Pytesseract OCR (English + Hindi)
+           │                ──► Microsoft Presidio (PII Anonymization)
+           │                ──► BNS / BNSS Statutory Rule Engine
+           ▼
+[Node.js Relayer :5000]     ──► Local AES-256-GCM Encryption
+           │
+     ┌─────┴────────────────────────────────┐
+     ▼                                      ▼
+[MinIO Storage :9000]             [Sepolia Smart Contract]
+Payload: IV + Tag + Ciphertext     Notarized: SHA-256 Digest
+Key: cases/:caseId/:file.enc       Parent-Child Custody Hash Linkage
+                                   Admissibility Metadata (BSA Sec. 63)
+
+```
+
+---
+
+
+    
+
+🚀 Environment Setup & Installation
+-----------------------------------
+
+### 1\. Prerequisites (Fedora / Linux)
+
+Bash
+
+Plain textANTLR4BashCC#CSSCoffeeScriptCMakeDartDjangoDockerEJSErlangGitGoGraphQLGroovyHTMLJavaJavaScriptJSONJSXKotlinLaTeXLessLuaMakefileMarkdownMATLABMarkupObjective-CPerlPHPPowerShell.propertiesProtocol BuffersPythonRRubySass (Sass)Sass (Scss)SchemeSQLShellSwiftSVGTSXTypeScriptWebAssemblyYAMLXML`   # Install Tesseract, build headers, and Python development tools  sudo dnf install -y git curl wget gcc gcc-c++ make openssl-devel \      tesseract tesseract-langpack-hin tesseract-langpack-mar python3-devel python3-pip podman   `
+
+### 2\. MinIO Object Storage (Podman)
+
+Bash
+
+Plain textANTLR4BashCC#CSSCoffeeScriptCMakeDartDjangoDockerEJSErlangGitGoGraphQLGroovyHTMLJavaJavaScriptJSONJSXKotlinLaTeXLessLuaMakefileMarkdownMATLABMarkupObjective-CPerlPHPPowerShell.propertiesProtocol BuffersPythonRRubySass (Sass)Sass (Scss)SchemeSQLShellSwiftSVGTSXTypeScriptWebAssemblyYAMLXML`   mkdir -p ~/veritas-storage/data  podman run -d \    --name minio-veritas \    --restart always \    -p 9000:9000 \    -p 9001:9001 \    -e "MINIO_ROOT_USER=admin" \    -e "MINIO_ROOT_PASSWORD=VeritasAdmin2026!" \    -v ~/veritas-storage/data:/data:Z \    quay.io/minio/minio server /data --console-address ":9001"   `
+
+*   Access the web dashboard at http://localhost:9001 (admin / VeritasAdmin2026!) and create a bucket named court-records.
+    
+
+### 3\. AI Service Setup
+
+Bash
+
+Plain textANTLR4BashCC#CSSCoffeeScriptCMakeDartDjangoDockerEJSErlangGitGoGraphQLGroovyHTMLJavaJavaScriptJSONJSXKotlinLaTeXLessLuaMakefileMarkdownMATLABMarkupObjective-CPerlPHPPowerShell.propertiesProtocol BuffersPythonRRubySass (Sass)Sass (Scss)SchemeSQLShellSwiftSVGTSXTypeScriptWebAssemblyYAMLXML`   cd ai-service  python3 -m venv venv  source venv/bin/activate  pip install --upgrade pip  pip install fastapi uvicorn[standard] python-multipart pydantic requests  pip install pytesseract pillow opencv-python-headless presidio-analyzer presidio-anonymizer spacy pypdf  pip install [https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl](https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl)   `
+
+### 4\. Node.js Backend Setup
+
+Bash
+
+Plain textANTLR4BashCC#CSSCoffeeScriptCMakeDartDjangoDockerEJSErlangGitGoGraphQLGroovyHTMLJavaJavaScriptJSONJSXKotlinLaTeXLessLuaMakefileMarkdownMATLABMarkupObjective-CPerlPHPPowerShell.propertiesProtocol BuffersPythonRRubySass (Sass)Sass (Scss)SchemeSQLShellSwiftSVGTSXTypeScriptWebAssemblyYAMLXML`   cd ../server  npm install   `
+
+Configure server/.env:
+
+Ini, TOML
+
+Plain textANTLR4BashCC#CSSCoffeeScriptCMakeDartDjangoDockerEJSErlangGitGoGraphQLGroovyHTMLJavaJavaScriptJSONJSXKotlinLaTeXLessLuaMakefileMarkdownMATLABMarkupObjective-CPerlPHPPowerShell.propertiesProtocol BuffersPythonRRubySass (Sass)Sass (Scss)SchemeSQLShellSwiftSVGTSXTypeScriptWebAssemblyYAMLXML`   PORT=5000  SEPOLIA_RPC_URL=[https://ethereum-sepolia-rpc.publicnode.com](https://ethereum-sepolia-rpc.publicnode.com)  PRIVATE_KEY=0x  CONTRACT_ADDRESS=  MINIO_ENDPOINT=[http://127.0.0.1:9000](http://127.0.0.1:9000)  MINIO_ROOT_USER=admin  MINIO_ROOT_PASSWORD=VeritasAdmin2026!  STORAGE_SECRET=veritas-secret-salt-2026   `
+
+### 5\. Frontend UI Setup
+
+Bash
+
+Plain textANTLR4BashCC#CSSCoffeeScriptCMakeDartDjangoDockerEJSErlangGitGoGraphQLGroovyHTMLJavaJavaScriptJSONJSXKotlinLaTeXLessLuaMakefileMarkdownMATLABMarkupObjective-CPerlPHPPowerShell.propertiesProtocol BuffersPythonRRubySass (Sass)Sass (Scss)SchemeSQLShellSwiftSVGTSXTypeScriptWebAssemblyYAMLXML`   cd ..  npm install   `
+
+🏃 Running the Application
+--------------------------
+
+Open three dedicated terminals:
+
+*   Bashcd ai-servicesource venv/bin/activatepython vision\_service.py
+    
+*   Bashcd servernode index.js
+    
+*   Bashnpm run dev
+    
+
+Open http://localhost:5173 to access the portal.
+
+
+
+🛠️ Tech Stack
+--------------
+
+*   **Frontend:** React 18, Vite, Tailwind CSS, Lucide Icons
+    
+*   **API Backend:** Node.js (Express), @aws-sdk/client-s3, ethers.js v6, Multer
+    
+*   **AI & Document Intelligence:** Python 3.11+, FastAPI, Uvicorn, Pytesseract, Microsoft Presidio, SpaCy (en\_core\_web\_sm), PyPDF
+    
+*   **Off-Chain Object Store:** MinIO (S3-compatible, containerized rootless via Podman)
+    
+*   **Trust Anchor:** Solidity (EvidenceRegistry.sol), Hardhat, Sepolia Testnet

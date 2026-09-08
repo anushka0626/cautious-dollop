@@ -15,10 +15,13 @@
     "cors": "^2.8.6",
     "ethers": "^6.17.0",
     "express": "^5.1.0",
+    "form-data": "^4.0.6",
     "multer": "^2.3.0",
     "openai": "^6.9.1",
     "pdf-parse": "^1.1.1",
-    "pdf-parser": "^1.0.5"
+    "pdf-parser": "^1.0.5",
+    "pdfkit": "^0.20.2",
+    "qrcode": "^1.5.4"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^7.0.0",

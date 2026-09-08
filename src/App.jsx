@@ -497,7 +497,7 @@ function App() {
                     <p className="eyebrow">Certificate of evidentiary integrity</p>
                     <h2>Admissible under BSA Section 63</h2>
                     <p>
-                      Encrypted into object storage and permanently anchored on Sepolia at block {receipt.blockNumber}.
+                      Encrypted into object storage and permanently anchored on-chain at block {receipt.blockNumber}.
                       The server-recorded digest matches the one this browser computed.
                     </p>
                     <div className="result-meta">

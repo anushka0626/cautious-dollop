@@ -458,7 +458,7 @@ main { flex: 1; padding: 34px 0 56px; }
 }
 .certificate.is-warn  .certificate-seal { color: var(--muted); }
 .certificate.is-alert .certificate-seal { color: var(--alert); }
-.certificate > div { flex: 1; min-width: 0; }
+.certificate > div:not(.certificate-seal) { flex: 1; min-width: 0; }
 .certificate h2 { margin: 0 0 6px; font-size: 1.15rem; }
 .certificate p:not(.eyebrow) { margin: 0 0 8px; color: var(--ink-soft); font-size: .84rem; }
 .certificate small { color: var(--muted); font-size: .74rem; }

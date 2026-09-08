@@ -776,9 +776,11 @@ function App() {
                   <p className="eyebrow">Tamper detected — no matching record</p>
                   <h2>Evidentiary chain broken</h2>
                   <p>
-                    {verifyResult.message || 'This fingerprint was never anchored, or the file has been altered since it was.'}
-                    {' '}Inadmissible under BSA Section 63 without a valid attestation.
+                    {verifyResult.message
+                      ? 'No record on the ledger carries this fingerprint. The file was never anchored, or it has been altered since it was.'
+                      : 'This fingerprint was never anchored, or the file has been altered since it was.'}
                   </p>
+                  <p>Inadmissible under BSA Section 63 without a valid attestation.</p>
                   <small><code>{verifyResult.hash}</code></small>
                 </div>
               </div>

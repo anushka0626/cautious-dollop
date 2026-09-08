@@ -178,7 +178,8 @@ function App() {
     } catch (thrown) {
       if (stagedHashFailed(thrown)) { setFile(null); setPreviewUrl(null); setError(thrown.message); return; }
       setAuditOnline(false);
-      setAuditNotice(`Statutory audit unavailable — ${describe(thrown)} The document can still be anchored.`);
+      const detail = describe(thrown).replace(/\s*\.?\s*$/, '');
+      setAuditNotice(`Statutory audit unavailable — ${detail}. The document can still be anchored.`);
     } finally {
       setBusy(false);
     }

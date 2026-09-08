@@ -6,8 +6,9 @@ import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
   // dev-dist is the service worker vite-plugin-pwa generates in dev; like dist it is
-  // build output, not source.
-  globalIgnores(['dist', 'dev-dist']),
+  // build output, not source. Python virtualenvs are ignored too: sklearn and torch
+  // both ship .js files inside site-packages, and they are not ours to lint.
+  globalIgnores(['dist', 'dev-dist', '**/.venv/**', '**/venv/**']),
   {
     files: ['**/*.{js,jsx}'],
     extends: [

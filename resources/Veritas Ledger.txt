@@ -47,9 +47,9 @@ Plain textANTLR4BashCC#CSSCoffeeScriptCMakeDartDjangoDockerEJSErlangGitGoGraphQL
 
 Bash
 
-Plain textANTLR4BashCC#CSSCoffeeScriptCMakeDartDjangoDockerEJSErlangGitGoGraphQLGroovyHTMLJavaJavaScriptJSONJSXKotlinLaTeXLessLuaMakefileMarkdownMATLABMarkupObjective-CPerlPHPPowerShell.propertiesProtocol BuffersPythonRRubySass (Sass)Sass (Scss)SchemeSQLShellSwiftSVGTSXTypeScriptWebAssemblyYAMLXML`   mkdir -p ~/veritas-storage/data  podman run -d \    --name minio-veritas \    --restart always \    -p 9000:9000 \    -p 9001:9001 \    -e "MINIO_ROOT_USER=admin" \    -e "MINIO_ROOT_PASSWORD=VeritasAdmin2026!" \    -v ~/veritas-storage/data:/data:Z \    quay.io/minio/minio server /data --console-address ":9001"   `
+Plain textANTLR4BashCC#CSSCoffeeScriptCMakeDartDjangoDockerEJSErlangGitGoGraphQLGroovyHTMLJavaJavaScriptJSONJSXKotlinLaTeXLessLuaMakefileMarkdownMATLABMarkupObjective-CPerlPHPPowerShell.propertiesProtocol BuffersPythonRRubySass (Sass)Sass (Scss)SchemeSQLShellSwiftSVGTSXTypeScriptWebAssemblyYAMLXML`   mkdir -p ~/veritas-storage/data  podman run -d \    --name minio-veritas \    --restart always \    -p 9000:9000 \    -p 9001:9001 \    -e "MINIO_ROOT_USER=admin" \    -e "MINIO_ROOT_PASSWORD=<your-minio-password>" \    -v ~/veritas-storage/data:/data:Z \    quay.io/minio/minio server /data --console-address ":9001"   `
 
-*   Access the web dashboard at http://localhost:9001 (admin / VeritasAdmin2026!) and create a bucket named court-records.
+*   Access the web dashboard at http://localhost:9001 (admin / <your-minio-password>) and create a bucket named court-records.
     
 
 ### 3\. AI Service Setup
@@ -68,7 +68,7 @@ Configure server/.env:
 
 Ini, TOML
 
-Plain textANTLR4BashCC#CSSCoffeeScriptCMakeDartDjangoDockerEJSErlangGitGoGraphQLGroovyHTMLJavaJavaScriptJSONJSXKotlinLaTeXLessLuaMakefileMarkdownMATLABMarkupObjective-CPerlPHPPowerShell.propertiesProtocol BuffersPythonRRubySass (Sass)Sass (Scss)SchemeSQLShellSwiftSVGTSXTypeScriptWebAssemblyYAMLXML`   PORT=5000  SEPOLIA_RPC_URL=[https://ethereum-sepolia-rpc.publicnode.com](https://ethereum-sepolia-rpc.publicnode.com)  PRIVATE_KEY=0x  CONTRACT_ADDRESS=  MINIO_ENDPOINT=[http://127.0.0.1:9000](http://127.0.0.1:9000)  MINIO_ROOT_USER=admin  MINIO_ROOT_PASSWORD=VeritasAdmin2026!  STORAGE_SECRET=veritas-secret-salt-2026   `
+Plain textANTLR4BashCC#CSSCoffeeScriptCMakeDartDjangoDockerEJSErlangGitGoGraphQLGroovyHTMLJavaJavaScriptJSONJSXKotlinLaTeXLessLuaMakefileMarkdownMATLABMarkupObjective-CPerlPHPPowerShell.propertiesProtocol BuffersPythonRRubySass (Sass)Sass (Scss)SchemeSQLShellSwiftSVGTSXTypeScriptWebAssemblyYAMLXML`   PORT=5000  SEPOLIA_RPC_URL=[https://ethereum-sepolia-rpc.publicnode.com](https://ethereum-sepolia-rpc.publicnode.com)  PRIVATE_KEY=0x  CONTRACT_ADDRESS=  MINIO_ENDPOINT=[http://127.0.0.1:9000](http://127.0.0.1:9000)  MINIO_ROOT_USER=admin  MINIO_ROOT_PASSWORD=<your-minio-password>  STORAGE_SECRET=veritas-secret-salt-2026   `
 
 ### 5\. Frontend UI Setup
 

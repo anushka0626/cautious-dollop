@@ -57,12 +57,17 @@ origins. Do not unpin them.
 ## 3. Storage (MinIO)
 
 ```bash
-docker run -d --name minio-veritas --restart always -p 9000:9000 -p 9001:9001 -e "MINIO_ROOT_USER=admin" -e "MINIO_ROOT_PASSWORD=VeritasAdmin2026!" -v veritas-storage:/data quay.io/minio/minio server /data --console-address ":9001"
+docker run -d --name minio-veritas --restart always -p 9000:9000 -p 9001:9001 -e "MINIO_ROOT_USER=admin" -e "MINIO_ROOT_PASSWORD=<your-minio-password>" -v veritas-storage:/data quay.io/minio/minio server /data --console-address ":9001"
 ```
 
-Open <http://localhost:9001>, sign in with `admin` / `VeritasAdmin2026!`, and create a
-bucket named exactly **`court-records`** — the name is hardcoded as `BUCKET_NAME` in
+Choose your own password and use the same value in both places above. Open
+<http://localhost:9001>, sign in with `admin` and that password, and create a bucket named
+exactly **`court-records`** — the name is hardcoded as `BUCKET_NAME` in
 `server/storage.js`.
+
+Whatever you pick must also go in `MINIO_ROOT_PASSWORD` in `server/.env` (§4).
+`storage.js` has no fallback for it, so the server will fail to reach storage if the two
+do not match.
 
 ---
 

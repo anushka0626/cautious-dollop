@@ -1,99 +1,21 @@
+/* Document-level defaults only. The palette, typography and every component
+   style live in App.css — this file exists so the page has sane metrics
+   before that stylesheet's webfonts arrive. */
+
 :root {
-  font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
-  line-height: 1.5;
-  font-weight: 400;
-
-  color-scheme: light dark;
-  color: rgba(255, 255, 255, 0.87);
-  background-color: #242424;
-
+  color-scheme: light;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-a {
-  font-weight: 500;
-  color: #646cff;
-  text-decoration: inherit;
-}
-a:hover {
-  color: #535bf2;
-}
+html { background: #f4f3ef; }
 
-body {
-  margin: 0;
-  margin: 0;
-  min-width: 320px;
-  min-height: 100vh;
-}
+body { min-height: 100vh; }
 
-h1 {
-  font-size: 3.2em;
-  line-height: 1.1;
-}
+#root { width: 100%; margin: 0 auto; }
 
-button {
-  border-radius: 8px;
-  border: 1px solid transparent;
-  padding: 0.6em 1.2em;
-  font-size: 1em;
-  font-weight: 500;
-  font-family: inherit;
-  background-color: #1a1a1a;
-  cursor: pointer;
-  transition: border-color 0.25s;
-}
-button:hover {
-  border-color: #646cff;
-}
-button:focus,
-button:focus-visible {
-  outline: 4px auto -webkit-focus-ring-color;
-}
-#root {
-  width: 100%; 
-  margin: 0 auto;
-}
-@media (prefers-color-scheme: light) {
-  :root {
-    color: #213547;
-    background-color: #ffffff;
-  }
-  a:hover {
-    color: #747bff;
-  }
-  button {
-    background-color: #f9f9f9;
-  }
-}
+a { color: inherit; text-decoration: none; }
 
-.timeline {
-  display: flex;
-  flex-direction: column;
-  gap: 1.25rem;
-  margin-top: 1.5rem;
-  max-height: 65vh;
-  overflow-y: auto;
-  padding-right: 0.5rem;
-}
-
-.timeline-event {
-  display: flex;
-  align-items: flex-start;
-  gap: 1rem;
-  background: var(--card, #1e293b);
-  border: 1px solid var(--border, #334155);
-  border-radius: 8px;
-  padding: 1rem;
-}
-
-.timeline-content {
-  flex: 1;
-  min-width: 0; /* Prevents overflow from long SHA-256 strings */
-}
-
-.timeline-content code {
-  word-break: break-all;
-}
+:focus-visible { outline: 2px solid #1d3b6e; outline-offset: 2px; }

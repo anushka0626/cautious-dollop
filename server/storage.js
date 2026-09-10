@@ -6,7 +6,7 @@ const s3 = new S3Client({
   region: "us-east-1",
   credentials: {
     accessKeyId: process.env.MINIO_ROOT_USER || "admin",
-    secretAccessKey: process.env.MINIO_ROOT_PASSWORD || "VeritasAdmin2026!",
+    secretAccessKey: process.env.MINIO_ROOT_PASSWORD,
   },
   forcePathStyle: true,
 });

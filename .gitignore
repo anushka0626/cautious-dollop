@@ -10,6 +10,7 @@ lerna-debug.log*
 node_modules
 dist
 dist-ssr
+dev-dist
 *.local
 
 .venv
@@ -86,6 +87,10 @@ coverage.xml
 .env
 *.env
 .env.*
+# ...but the committed template is not a secret, and `.env.*` above would
+# otherwise swallow it, leaving README's "cp server/.env.example" broken.
+!.env.example
+!**/.env.example
 .venv
 env/
 venv/
@@ -99,3 +104,8 @@ venv.bak/
 *.swp
 *.swo
 *~
+
+# Hardhat
+artifacts/
+cache/
+typechain-types/

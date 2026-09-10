@@ -5,7 +5,10 @@ import reactRefresh from 'eslint-plugin-react-refresh'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
-  globalIgnores(['dist']),
+  // dev-dist is the service worker vite-plugin-pwa generates in dev; like dist it is
+  // build output, not source. Python virtualenvs are ignored too: sklearn and torch
+  // both ship .js files inside site-packages, and they are not ours to lint.
+  globalIgnores(['dist', 'dev-dist', '**/.venv/**', '**/venv/**']),
   {
     files: ['**/*.{js,jsx}'],
     extends: [
@@ -25,5 +28,22 @@ export default defineConfig([
     rules: {
       'no-unused-vars': ['error', { varsIgnorePattern: '^[A-Z_]' }],
     },
-  },  
+  },
+  {
+    // server/ is CommonJS with its own package.json, so it gets Node globals
+    // instead of the browser ones the frontend block applies. Flat config merges
+    // `globals` rather than replacing them, so the browser set is switched off
+    // explicitly first — otherwise a stray `document` in server code lints clean.
+    files: ['server/**/*.js'],
+    languageOptions: {
+      globals: {
+        ...Object.fromEntries(Object.keys(globals.browser).map((name) => [name, 'off'])),
+        ...globals.node,
+      },
+      sourceType: 'commonjs',
+      parserOptions: {
+        sourceType: 'commonjs',
+      },
+    },
+  },
 ])
